@@ -49,10 +49,14 @@ class Arena:
         dx = x - self.center[0]
         dy = y - self.center[1]
         angle = math.atan2(dy, dx) % (2 * math.pi)
-        for seg in self.segments:
-            if seg.start_angle <= angle < seg.end_angle:
-                return seg
-        return self.segments[-1]
+        
+        # 直接根据角度值判断，避免遍历和边界问题
+        if angle < 2 * math.pi / 3:  # 0-120°
+            return self.segments[0]  # 红色
+        elif angle < 4 * math.pi / 3:  # 120-240°
+            return self.segments[1]  # 黄色
+        else:  # 240-360°
+            return self.segments[2]  # 蓝色
 
     # ── 碰撞效果 ──────────────────────────────────────────────────────────────
 
