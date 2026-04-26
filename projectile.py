@@ -26,6 +26,8 @@ class SkillDef:
     movement_type: MovementType            # 移动模式
     movement_params: dict = field(default_factory=dict)  # 移动参数
     lifetime: float | None = None          # 存留时间（秒），None 表示永久
+    burn_duration: float = 0.0             # 灼烧持续秒数（0 表示无灼烧）
+    burn_dps: float = 0.0                  # 灼烧每秒伤害
 
 
 from venue import ARENA_CENTER, ARENA_RADIUS
@@ -45,6 +47,7 @@ class Projectile:
         self.owner = owner              # 发射者引用（orbit 模式需要跟踪位置）
         self.skill = skill
         self.age = 0.0                  # 已存留时间
+        self._hit = False               # 命中后立即消失
 
         # 移动状态
         self.vx = 0.0
@@ -146,7 +149,9 @@ class Projectile:
             self._update_bounce(dt)
 
     def is_expired(self) -> bool:
-        """存留时间到期则返回 True（lifetime=None 永不超时）。"""
+        """存留时间到期或已命中目标则返回 True。"""
+        if self._hit:
+            return True
         if self.skill.lifetime is None:
             return False
         return self.age >= self.skill.lifetime
