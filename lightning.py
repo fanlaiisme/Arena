@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 import pygame
 
+from venue import ARENA_CENTER, ARENA_RADIUS
+
 
 @dataclass
 class LightningDef:
@@ -85,3 +87,147 @@ class LightningBolt:
             pygame.draw.lines(screen, self.defn.color, False,
                               [(int(x), int(y)) for x, y in self.points],
                               self.defn.width)
+
+
+# ── Lightning Trap ────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class LightningTrapDef:
+    """定义闪电陷阱技能的属性。"""
+    name: str
+    cooldown: float
+    damage: float                    # shock DPS
+    color: tuple[int, int, int]      # bolt line color during travel
+    bolt_count: int                  # 散射条数
+    bolt_length: float               # 移动时闪电尾迹长度
+    bolt_speed: float                # 移动速度 (px/s)
+    travel_duration: float           # 移动阶段时长 (秒)
+    trap_radius: float               # 陷阱圆点半径
+    trap_color: tuple[int, int, int] # 陷阱圆点颜色
+    shock_duration: float            # 电击持续 (秒)
+    shock_slow_mult: float           # 电击减速倍率
+
+
+class LightningTrapBolt:
+    """一条闪电陷阱 —— TRAVEL阶段快速移动并反弹，TRAP阶段静止为黄色圆点。"""
+
+    def __init__(self, x: float, y: float, angle: float,
+                 owner_id: str, defn: LightningTrapDef):
+        self.owner_id = owner_id
+        self.defn = defn
+        self.age = 0.0
+        self.state = "TRAVEL"
+        self._triggered = False
+
+        self.head_x = float(x)
+        self.head_y = float(y)
+
+        self.vx = math.cos(angle) * defn.bolt_speed
+        self.vy = math.sin(angle) * defn.bolt_speed
+
+        # Short trail for bolt body visual during travel
+        self.trail: list[tuple[float, float]] = [(x, y)]
+
+    def update(self, dt: float):
+        self.age += dt
+        if self.state == "TRAVEL":
+            self.head_x += self.vx * dt
+            self.head_y += self.vy * dt
+
+            self.trail.append((self.head_x, self.head_y))
+            max_trail = 8
+            if len(self.trail) > max_trail:
+                self.trail = self.trail[-max_trail:]
+
+            # Bounce off arena boundary
+            dx = self.head_x - ARENA_CENTER[0]
+            dy = self.head_y - ARENA_CENTER[1]
+            dist = math.hypot(dx, dy)
+            limit = ARENA_RADIUS - self.defn.trap_radius - 2
+            if dist >= limit and dist > 0.001:
+                nx = dx / dist
+                ny = dy / dist
+                dot = self.vx * nx + self.vy * ny
+                self.vx -= 2 * dot * nx
+                self.vy -= 2 * dot * ny
+                self.head_x = ARENA_CENTER[0] + nx * limit
+                self.head_y = ARENA_CENTER[1] + ny * limit
+
+            if self.age >= self.defn.travel_duration:
+                self.state = "TRAP"
+
+    def is_expired(self) -> bool:
+        if self._triggered:
+            return True
+        # Safety timeout for traps: 20s
+        if self.state == "TRAP" and self.age > self.defn.travel_duration + 20.0:
+            return True
+        return False
+
+    def trigger(self):
+        self._triggered = True
+
+    def collides_with_player(self, player) -> bool:
+        """TRAP阶段检测玩家圆是否碰到陷阱圆点。"""
+        if self.state != "TRAP":
+            return False
+        dx = self.head_x - player.x
+        dy = self.head_y - player.y
+        return math.hypot(dx, dy) < player.radius + self.defn.trap_radius
+
+    def collides_with_pet(self, pet) -> bool:
+        """TRAP阶段检测宠物是否碰到陷阱圆点。"""
+        if self.state != "TRAP":
+            return False
+        if isinstance(pet, SpiderPet):
+            px, py = pet.x, pet.y
+            pr = pet._body_radius()
+        else:
+            px, py = pet.segments[0]
+            pr = pet._head_radius()
+        dx = self.head_x - px
+        dy = self.head_y - py
+        return math.hypot(dx, dy) < pr + self.defn.trap_radius
+
+    def apply_shock(self, target):
+        """对目标（player或pet）施加电击效果。"""
+        target.slow_mult = self.defn.shock_slow_mult
+        target.slow_timer = self.defn.shock_duration
+        target.shock_timer = self.defn.shock_duration
+        target.shock_dps = self.defn.damage
+        self.trigger()
+
+    def draw(self, screen):
+        if self.state == "TRAVEL":
+            # Draw short zigzag bolt body trailing behind head
+            if len(self.trail) >= 2:
+                pts = []
+                for i, (tx, ty) in enumerate(self.trail):
+                    jitter_x = random.uniform(-2, 2) if i % 2 == 0 else random.uniform(-2, 2)
+                    jitter_y = random.uniform(-2, 2) if i % 2 == 1 else random.uniform(-2, 2)
+                    pts.append((int(tx + jitter_x), int(ty + jitter_y)))
+                if len(pts) >= 2:
+                    r, g, b = self.defn.color
+                    glow = (r, g, b, 80)
+                    line_surf = pygame.Surface((screen.get_width(), screen.get_height()), pygame.SRCALPHA)
+                    pygame.draw.lines(line_surf, glow, False, pts, 3)
+                    screen.blit(line_surf, (0, 0))
+                    pygame.draw.lines(screen, self.defn.color, False, pts, 1)
+        elif self.state == "TRAP":
+            # Yellow dot with glow
+            cx, cy = int(self.head_x), int(self.head_y)
+            # Outer glow
+            glow_r = int(self.defn.trap_radius * 2.5)
+            glow_surf = pygame.Surface((glow_r * 2, glow_r * 2), pygame.SRCALPHA)
+            for r in range(glow_r, 0, -1):
+                alpha = max(1, int(50 * (1 - r / glow_r)))
+                pygame.draw.circle(glow_surf, (255, 255, 50, alpha), (glow_r, glow_r), r)
+            screen.blit(glow_surf, (cx - glow_r, cy - glow_r))
+            # Core dot
+            pygame.draw.circle(screen, self.defn.trap_color, (cx, cy), self.defn.trap_radius)
+            pygame.draw.circle(screen, (255, 255, 255), (cx, cy), max(1, self.defn.trap_radius // 2))
+
+
+# Forward import for type check in LightningTrapBolt.collides_with_pet
+from pet import SpiderPet

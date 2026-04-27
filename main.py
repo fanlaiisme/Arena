@@ -4,8 +4,8 @@ import math
 
 from characters import CharacterTemplate, CHARACTERS
 from projectile import Projectile
-from lightning import LightningBolt
-from pet import Pet
+from lightning import LightningBolt, LightningTrapBolt
+from pet import Pet, SpiderPet, SnowmanPet, PetMovement
 from weapon import Weapon, Bullet
 from venue import Arena
 
@@ -38,6 +38,7 @@ class Player:
         self.alive = True
         self.skill_timer = 0.0  # counts up to skill.cooldown
         self.lightning_timer = 0.0  # counts up to lightning_skill.cooldown
+        self.lightning_trap_timer = 0.0  # counts up to lightning_trap.cooldown
         self.pet_timer = 0.0       # counts up to pet_skill.cooldown
         self.trail_points: list[tuple[float, float]] = []
         self.max_trail_length = 600
@@ -50,6 +51,10 @@ class Player:
         self.burn_timer = 0.0
         self.burn_dps = 0.0
         self._flame_seeds = [random.uniform(0, 100) for _ in range(18)]
+        # Shock debuff
+        self.shock_timer = 0.0
+        self.shock_dps = 0.0
+        self._shock_seeds = [random.uniform(0, 100) for _ in range(6)]
 
     def update(self, arena=None, dt=1/60):
         if not self.alive:
@@ -69,6 +74,11 @@ class Player:
         if self.burn_timer > 0:
             self.burn_timer = max(0.0, self.burn_timer - dt)
             self.take_damage(self.burn_dps * dt)
+
+        # Shock damage over time
+        if self.shock_timer > 0:
+            self.shock_timer = max(0.0, self.shock_timer - dt)
+            self.take_damage(self.shock_dps * dt)
 
         # Random acceleration (physics-based perturbation)
         ax = random.uniform(-0.25, 0.25)
@@ -115,6 +125,9 @@ class Player:
         # Fire effect (burning)
         if self.burn_timer > 0:
             self._draw_flames(screen)
+        # Shock effect
+        if self.shock_timer > 0:
+            self._draw_shock(screen)
 
         pygame.draw.circle(screen, self.char.color, (int(self.x), int(self.y)), self.radius)
         pygame.draw.circle(screen, (60, 60, 60), (int(self.x), int(self.y)), self.radius, 2)
@@ -149,6 +162,31 @@ class Player:
 
             pygame.draw.circle(screen, color, (int(fx), int(fy)), max(1, int(size)))
 
+    def _draw_shock(self, screen):
+        """在被电击的角色身体表面绘制细小电流。"""
+        shock_ratio = min(1.0, self.shock_timer / 2.0)
+        now = pygame.time.get_ticks() / 1000.0
+
+        for i, seed in enumerate(self._shock_seeds):
+            base_angle = (seed * 6.28318 + now * 2.5 + i * 1.047) % 6.28318
+            arc_span = 0.3 + (seed % 0.5) * 0.55
+
+            num_segs = 4
+            points = []
+            for j in range(num_segs + 1):
+                t = j / num_segs
+                angle = base_angle + (t - 0.5) * arc_span
+                flicker = math.sin(now * 22 + seed * 17 + j * 2.8) * 2.5 * shock_ratio
+                r = self.radius + flicker
+                px = self.x + math.cos(angle) * r
+                py = self.y + math.sin(angle) * r
+                points.append((int(px), int(py)))
+
+            color = (255, 255, 110) if i % 2 == 0 else (200, 235, 255)
+            width = max(1, int(1.5 * shock_ratio))
+            if len(points) >= 2:
+                pygame.draw.lines(screen, color, False, points, width)
+
     def take_damage(self, amount):
         if self.dmg_reduction_timer > 0:
             amount = amount * (1.0 - self.dmg_reduction)
@@ -178,6 +216,7 @@ class Game:
         self.player2 = None
         self.projectiles: list[Projectile] = []
         self.lightning_bolts: list[LightningBolt] = []
+        self.lightning_traps: list[LightningTrapBolt] = []
         self.pets: list[Pet] = []
         self.weapons: list[Weapon] = []
         self.arena = Arena()
@@ -191,7 +230,7 @@ class Game:
         if event.key == pygame.K_ESCAPE:
             self.running = False
             return
-        if event.key not in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7):
+        if event.key not in (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9):
             return
 
         idx = event.key - pygame.K_1
@@ -216,100 +255,91 @@ class Game:
 
         # Prompt
         if self.state == "select_p1":
-            prompt_text = "按 1-7 选择 左方 角色"
+            prompt_text = "按 1-9 选择 左方 角色"
         else:
             c = CHARACTERS[self.selection[0]]
-            prompt_text = f"已选左方: {c.name}  —  按 1-7 选择 右方 角色（不可重复）"
+            prompt_text = f"已选左方: {c.name}  —  按 1-9 选择 右方 角色（不可重复）"
         prompt = self.font.render(prompt_text, True, (180, 180, 180))
-        self.screen.blit(prompt, (CENTER[0] - prompt.get_width() // 2, 100))
+        self.screen.blit(prompt, (CENTER[0] - prompt.get_width() // 2, 70))
 
-        # Character cards
-        card_w, card_h = 100, 280
-        total_w = len(CHARACTERS) * card_w + (len(CHARACTERS) - 1) * 8
-        start_x = CENTER[0] - total_w // 2
-        card_y = 160
+        # Character cards — two rows (5 + 4)
+        card_w, card_h = 100, 240
+        half = 5  # first row: 5 cards
+        rows = [CHARACTERS[:half], CHARACTERS[half:]]
+        row_y = [140, 390]
 
-        for i, char in enumerate(CHARACTERS):
-            cx = start_x + i * (card_w + 8)
-            rect = pygame.Rect(cx, card_y, card_w, card_h)
+        for row_idx, row_chars in enumerate(rows):
+            total_w = len(row_chars) * card_w + (len(row_chars) - 1) * 8
+            start_x = CENTER[0] - total_w // 2
+            card_y = row_y[row_idx]
 
-            # Highlight selected character
-            is_selected_p1 = self.selection[0] == i
-            is_selected = is_selected_p1
+            for col, char in enumerate(row_chars):
+                i = row_idx * half + col
+                cx = start_x + col * (card_w + 8)
+                rect = pygame.Rect(cx, card_y, card_w, card_h)
 
-            if is_selected:
-                border_color = (255, 215, 0)
-                bg_color = (50, 50, 60)
-            elif self.state == "select_p2" and self.selection[0] == i:
-                border_color = (100, 100, 100)
-                bg_color = (35, 35, 45)
-            else:
-                border_color = (70, 70, 80)
-                bg_color = (35, 35, 45)
+                # Highlight selected character
+                is_selected_p1 = self.selection[0] == i
+                is_selected = is_selected_p1
 
-            pygame.draw.rect(self.screen, bg_color, rect, border_radius=10)
-            pygame.draw.rect(self.screen, border_color, rect, 2, border_radius=10)
+                if is_selected:
+                    border_color = (255, 215, 0)
+                    bg_color = (50, 50, 60)
+                elif self.state == "select_p2" and self.selection[0] == i:
+                    border_color = (100, 100, 100)
+                    bg_color = (35, 35, 45)
+                else:
+                    border_color = (70, 70, 80)
+                    bg_color = (35, 35, 45)
 
-            # Character color circle
-            circle_cx = cx + card_w // 2
-            pygame.draw.circle(self.screen, char.color, (circle_cx, card_y + 50), 30)
-            pygame.draw.circle(self.screen, (60, 60, 60), (circle_cx, card_y + 50), 30, 2)
+                pygame.draw.rect(self.screen, bg_color, rect, border_radius=10)
+                pygame.draw.rect(self.screen, border_color, rect, 2, border_radius=10)
 
-            # Name
-            name_surf = self.font_small.render(char.name, True, char.color)
-            self.screen.blit(name_surf, (cx + card_w // 2 - name_surf.get_width() // 2, card_y + 100))
+                # Character color circle
+                circle_cx = cx + card_w // 2
+                pygame.draw.circle(self.screen, char.color, (circle_cx, card_y + 40), 25)
+                pygame.draw.circle(self.screen, (60, 60, 60), (circle_cx, card_y + 40), 25, 2)
 
-            # Skill info — handle both projectile and lightning
-            y_offset = card_y + 130
-            if char.skill is not None:
-                sk = char.skill
-                skill_label = self.font_small.render(f"技能: {sk.name}", True, TEXT_COLOR)
-                self.screen.blit(skill_label, (cx + card_w // 2 - skill_label.get_width() // 2, y_offset))
-                cd_surf = self.font_small.render(f"冷却: {sk.cooldown:.1f}s", True, (150, 150, 150))
-                self.screen.blit(cd_surf, (cx + card_w // 2 - cd_surf.get_width() // 2, y_offset + 45))
-                dmg_surf = self.font_small.render(f"伤害: {sk.damage}", True, (150, 150, 150))
-                self.screen.blit(dmg_surf, (cx + card_w // 2 - dmg_surf.get_width() // 2, y_offset + 65))
-                mt_surf = self.font_small.render(f"模式: {sk.movement_type.value}", True, (150, 150, 150))
-                self.screen.blit(mt_surf, (cx + card_w // 2 - mt_surf.get_width() // 2, y_offset + 85))
-            elif char.lightning_skill is not None:
-                lsk = char.lightning_skill
-                skill_label = self.font_small.render(f"技能: {lsk.name}", True, lsk.color)
-                self.screen.blit(skill_label, (cx + card_w // 2 - skill_label.get_width() // 2, y_offset))
-                cd_surf = self.font_small.render(f"冷却: {lsk.cooldown:.1f}s", True, (150, 150, 150))
-                self.screen.blit(cd_surf, (cx + card_w // 2 - cd_surf.get_width() // 2, y_offset + 45))
-                dmg_surf = self.font_small.render(f"伤害: {lsk.damage}", True, (150, 150, 150))
-                self.screen.blit(dmg_surf, (cx + card_w // 2 - dmg_surf.get_width() // 2, y_offset + 65))
-                mt_surf = self.font_small.render(f"模式: 闪电 x{lsk.bolt_count}", True, (150, 150, 150))
-                self.screen.blit(mt_surf, (cx + card_w // 2 - mt_surf.get_width() // 2, y_offset + 85))
-            elif char.pet_skill is not None:
-                psk = char.pet_skill
-                skill_label = self.font_small.render(f"技能: {psk.name}", True, psk.color)
-                self.screen.blit(skill_label, (cx + card_w // 2 - skill_label.get_width() // 2, y_offset))
-                cd_surf = self.font_small.render(f"冷却: {psk.cooldown:.1f}s", True, (150, 150, 150))
-                self.screen.blit(cd_surf, (cx + card_w // 2 - cd_surf.get_width() // 2, y_offset + 45))
-                dmg_surf = self.font_small.render(f"伤害: {psk.damage}", True, (150, 150, 150))
-                self.screen.blit(dmg_surf, (cx + card_w // 2 - dmg_surf.get_width() // 2, y_offset + 65))
-                mt_surf = self.font_small.render(f"模式: 召唤 HP{psk.hp}", True, (150, 150, 150))
-                self.screen.blit(mt_surf, (cx + card_w // 2 - mt_surf.get_width() // 2, y_offset + 85))
-            elif char.weapon_skill is not None:
-                wsk = char.weapon_skill
-                skill_label = self.font_small.render(f"技能: {wsk.name}", True, wsk.color)
-                self.screen.blit(skill_label, (cx + card_w // 2 - skill_label.get_width() // 2, y_offset))
-                cd_surf = self.font_small.render(f"冷却: {wsk.cooldown:.1f}s", True, (150, 150, 150))
-                self.screen.blit(cd_surf, (cx + card_w // 2 - cd_surf.get_width() // 2, y_offset + 45))
-                dmg_surf = self.font_small.render(f"伤害: {wsk.damage}", True, (150, 150, 150))
-                self.screen.blit(dmg_surf, (cx + card_w // 2 - dmg_surf.get_width() // 2, y_offset + 65))
-                type_val = "手枪" if wsk.weapon_type.value == "pistol" else "镰刀"
-                mt_surf = self.font_small.render(f"类型: {type_val}", True, (150, 150, 150))
-                self.screen.blit(mt_surf, (cx + card_w // 2 - mt_surf.get_width() // 2, y_offset + 85))
+                # Name
+                name_surf = self.font_small.render(char.name, True, char.color)
+                self.screen.blit(name_surf, (cx + card_w // 2 - name_surf.get_width() // 2, card_y + 78))
 
-            # Speed
-            speed_surf = self.font_small.render(f"速度: {char.speed:.1f}", True, (150, 150, 150))
-            self.screen.blit(speed_surf, (cx + card_w // 2 - speed_surf.get_width() // 2, card_y + 155))
+                # Skill info — collect all active skills for this character
+                y_offset = card_y + 108
+                skills: list[tuple[str, str, tuple[int, int, int]]] = []
+                if char.skill is not None:
+                    sk = char.skill
+                    skills.append(("skill", f"{sk.name} CD:{sk.cooldown:.1f}s DMG:{sk.damage}", sk.color))
+                    skills.append(("skill_sub", f"模式:{sk.movement_type.value}", (150, 150, 150)))
+                if char.lightning_skill is not None:
+                    lsk = char.lightning_skill
+                    skills.append(("lightning", f"{lsk.name} CD:{lsk.cooldown:.1f}s DMG:{lsk.damage}", lsk.color))
+                    skills.append(("lightning_sub", f"闪电 x{lsk.bolt_count}", (150, 150, 150)))
+                if char.lightning_trap is not None:
+                    tsk = char.lightning_trap
+                    skills.append(("trap", f"{tsk.name} CD:{tsk.cooldown:.1f}s DMG:{tsk.damage}/s", tsk.trap_color))
+                    skills.append(("trap_sub", f"陷阱 x{tsk.bolt_count} 减速{tsk.shock_duration}s", (150, 150, 150)))
+                if char.pet_skill is not None:
+                    psk = char.pet_skill
+                    skills.append(("pet", f"{psk.name} CD:{psk.cooldown:.1f}s DMG:{psk.damage}", psk.color))
+                    skills.append(("pet_sub", f"召唤 HP{psk.hp}", (150, 150, 150)))
+                if char.weapon_skill is not None:
+                    wsk = char.weapon_skill
+                    skills.append(("weapon", f"{wsk.name} CD:{wsk.cooldown:.1f}s DMG:{wsk.damage}", wsk.color))
+                    type_map = {"pistol": "手枪", "scythe": "镰刀", "shield": "盾牌", "boomerang": "回旋镖"}
+                    skills.append(("weapon_sub", f"类型:{type_map.get(wsk.weapon_type.value, '武器')}", (150, 150, 150)))
+                line_h = 15
+                for j, (_, text, color) in enumerate(skills):
+                    surf = self.font_small.render(text, True, color)
+                    self.screen.blit(surf, (cx + card_w // 2 - surf.get_width() // 2, y_offset + j * line_h))
 
-            # Key label
-            key_surf = self.font.render(f"[{i + 1}]", True, TEXT_COLOR)
-            self.screen.blit(key_surf, (cx + card_w // 2 - key_surf.get_width() // 2, card_y + card_h - 45))
+                # Speed
+                speed_surf = self.font_small.render(f"速度: {char.speed:.1f}", True, (150, 150, 150))
+                self.screen.blit(speed_surf, (cx + card_w // 2 - speed_surf.get_width() // 2, card_y + 190))
+
+                # Key label
+                key_surf = self.font.render(f"[{i + 1}]", True, TEXT_COLOR)
+                self.screen.blit(key_surf, (cx + card_w // 2 - key_surf.get_width() // 2, card_y + card_h - 22))
 
     # ── Match start ──────────────────────────────────────────────────────────
     def start_match(self):
@@ -334,6 +364,7 @@ class Game:
 
         self.projectiles = []
         self.lightning_bolts = []
+        self.lightning_traps = []
         self.pets = []
         self.weapons = []
 
@@ -385,6 +416,22 @@ class Game:
             player.dmg_reduction = ldef.self_dmg_reduction
             player.dmg_reduction_timer = ldef.duration
 
+    # ── Lightning trap spawning ─────────────────────────────────────────────
+
+    def try_use_lightning_trap(self, player: Player):
+        if not player.alive:
+            return
+        tdef = player.char.lightning_trap
+        if tdef is None:
+            return
+        if player.lightning_trap_timer >= tdef.cooldown:
+            player.lightning_trap_timer = 0.0
+            angles = [random.uniform(0, 2 * math.pi) for _ in range(tdef.bolt_count)]
+            for angle in angles:
+                self.lightning_traps.append(
+                    LightningTrapBolt(player.x, player.y, angle, player.char.id, tdef)
+                )
+
     # ── Pet spawning ─────────────────────────────────────────────────────────
     def try_use_pet(self, player: Player):
         if not player.alive:
@@ -400,9 +447,24 @@ class Game:
                 target = opponent
             else:
                 target = None
-            self.pets.append(
-                Pet(player.x, player.y, player.char.id, target, pdef)
-            )
+            if pdef.movement_type == PetMovement.SPIDER:
+                self.pets.append(
+                    SpiderPet(player.x, player.y, player.char.id, target, pdef)
+                )
+            elif pdef.movement_type == PetMovement.CHASE and pdef.body_length == 0:
+                # Snowman pet — enforce max 6 per owner
+                owned_snowmen = [p for p in self.pets
+                                 if isinstance(p, SnowmanPet) and p.owner_id == player.char.id]
+                if len(owned_snowmen) >= 6:
+                    oldest = min(owned_snowmen, key=lambda p: p.age)
+                    oldest.hp = 0  # melt the oldest
+                self.pets.append(
+                    SnowmanPet(player.x, player.y, player.char.id, target, pdef)
+                )
+            else:
+                self.pets.append(
+                    Pet(player.x, player.y, player.char.id, target, pdef)
+                )
 
     # ── Player-to-player collision ──────────────────────────────────────────
     def resolve_player_collision(self):
@@ -440,6 +502,28 @@ class Game:
                 p2.vy += dv_dot_n * ny
 
     # ── Projectile collision detection ───────────────────────────────────────
+
+    def _get_pet_head(self, pet) -> tuple[float, float]:
+        """Return (x, y) of a pet's head, works for both Pet and SpiderPet."""
+        if isinstance(pet, SpiderPet):
+            return pet.x, pet.y
+        return pet.segments[0]
+
+    def _get_pet_radius(self, pet) -> float:
+        """Return collision radius of a pet's head."""
+        if isinstance(pet, SpiderPet):
+            return pet._body_radius()
+        return pet._head_radius()
+
+    def _set_pet_pos(self, pet, x: float, y: float):
+        """Set a pet's head position. Works for Pet, SnowmanPet, and SpiderPet."""
+        if isinstance(pet, SpiderPet):
+            pet.x = x
+            pet.y = y
+        else:
+            pet.segments[0] = (x, y)
+
+    # ── Projectile collision detection (continued) ──────────────────────────
     def check_collisions(self):
         for proj in self.projectiles:
             # Player 1 takes damage from player 2's projectiles
@@ -530,6 +614,33 @@ class Game:
                     player.take_damage(pet.defn.damage)
                     pet.hp = 0  # disappear after dealing damage
 
+    def check_pet_pet_collisions(self):
+        """Pets from different owners collide → both take damage + bounce apart."""
+        for i, pet_a in enumerate(self.pets):
+            for pet_b in self.pets[i + 1:]:
+                if pet_a.owner_id == pet_b.owner_id:
+                    continue
+                # Circle-circle collision between pet heads
+                ax, ay = self._get_pet_head(pet_a)
+                bx, by = self._get_pet_head(pet_b)
+                ar = self._get_pet_radius(pet_a)
+                br = self._get_pet_radius(pet_b)
+                dx = ax - bx
+                dy = ay - by
+                dist = math.hypot(dx, dy)
+                min_dist = ar + br
+                if dist < min_dist and dist > 0.001:
+                    # Damage: each deals its defn.damage to the other
+                    pet_a.take_damage(pet_b.defn.damage)
+                    pet_b.take_damage(pet_a.defn.damage)
+                    # Separate to remove overlap
+                    nx = dx / dist
+                    ny = dy / dist
+                    overlap = min_dist - dist
+                    half = overlap / 2
+                    self._set_pet_pos(pet_a, ax + nx * half, ay + ny * half)
+                    self._set_pet_pos(pet_b, bx - nx * half, by - ny * half)
+
     def check_projectile_pet_collisions(self):
         """Projectiles from a player damage opponent's pets."""
         for proj in self.projectiles:
@@ -546,9 +657,29 @@ class Game:
             for pet in self.pets:
                 if bolt.owner_id == pet.owner_id:
                     continue
-                head_x, head_y = pet.segments[0]
-                if bolt.collides_with_point(head_x, head_y, pet._head_radius()):
+                head_x, head_y = self._get_pet_head(pet)
+                if bolt.collides_with_point(head_x, head_y, self._get_pet_radius(pet)):
                     pet.take_damage(bolt.defn.damage)
+
+    def check_lightning_trap_player_collisions(self):
+        """TRAP状态的陷阱碰到敌方玩家 → apply shock + disappear."""
+        for trap in self.lightning_traps:
+            for player in (self.player1, self.player2):
+                if not player.alive:
+                    continue
+                if trap.owner_id == player.char.id:
+                    continue
+                if trap.collides_with_player(player):
+                    trap.apply_shock(player)
+
+    def check_lightning_trap_pet_collisions(self):
+        """TRAP状态的陷阱碰到敌方宠物 → apply shock + disappear."""
+        for trap in self.lightning_traps:
+            for pet in self.pets:
+                if trap.owner_id == pet.owner_id:
+                    continue
+                if trap.collides_with_pet(pet):
+                    trap.apply_shock(pet)
 
     def check_trail_pet_collisions(self):
         """Check if any pet touches the frost mage's trail (only frost has trail)."""
@@ -562,20 +693,49 @@ class Game:
                 trail = player.trail_points
                 if len(trail) < 2:
                     continue
-                head_x, head_y = pet.segments[0]
+                head_x, head_y = self._get_pet_head(pet)
                 for i in range(0, len(trail) - 1, 3):
                     dist = self._point_to_segment_dist(
                         head_x, head_y,
                         trail[i][0], trail[i][1],
                         trail[i + 1][0], trail[i + 1][1])
                     if dist < threshold:
-                        pet.slow_mult *= 0.975
-                        pet.take_damage(0.05)
+                        if isinstance(pet, SpiderPet):
+                            pet.slow_timer = 0.15
+                            pet.take_damage(0.05)
+                        else:
+                            pet.slow_mult *= 0.975
+                            pet.slow_timer = 0.15
+                            pet.take_damage(0.05)
                         break
+
+    def check_spider_web_collisions(self):
+        """检查玩家是否碰到对方蜘蛛的网。"""
+        for pet in self.pets:
+            if not isinstance(pet, SpiderPet):
+                continue
+            for player in (self.player1, self.player2):
+                if not player.alive:
+                    continue
+                if pet.owner_id == player.char.id:
+                    continue
+                pet.check_web_player_collision(player)
+
+    def check_spider_web_pet_collisions(self):
+        """检查敌方宠物是否碰到蜘蛛网。"""
+        for spider in self.pets:
+            if not isinstance(spider, SpiderPet):
+                continue
+            for other in self.pets:
+                if other is spider:
+                    continue
+                if other.owner_id == spider.owner_id:
+                    continue
+                spider.check_web_pet_collision(other)
 
     # ── Weapon collision detection ──────────────────────────────────────────
     def check_weapon_collisions(self):
-        """Scythe weapons deal contact damage to the opposing player."""
+        """Melee weapons deal contact damage to the opposing player."""
         for weapon in self.weapons:
             for player in (self.player1, self.player2):
                 if not player.alive:
@@ -584,15 +744,44 @@ class Game:
                     continue
                 if weapon.collides_with(player):
                     player.take_damage(weapon.defn.damage)
+                    # 盾牌击退
+                    if weapon._knockback_target is player:
+                        dx = player.x - weapon.owner.x
+                        dy = player.y - weapon.owner.y
+                        dist = math.hypot(dx, dy)
+                        if dist > 0.001:
+                            player.vx = dx / dist * 200
+                            player.vy = dy / dist * 200
+                        else:
+                            player.vx = -player.vx * 1.3
+                            player.vy = -player.vy * 1.3
+                        weapon._knockback_target = None
 
     def check_weapon_pet_collisions(self):
-        """Scythe weapons damage opponent's pets."""
+        """Melee weapons damage opponent's pets."""
         for weapon in self.weapons:
             for pet in self.pets:
                 if weapon.owner_id == pet.owner_id:
                     continue
                 if weapon.collides_with_pet(pet):
                     pet.take_damage(weapon.defn.damage)
+
+    def check_shield_projectile_collisions(self):
+        """盾牌格挡投射物：投射物碰到盾牌后被摧毁。"""
+        for weapon in self.weapons:
+            if weapon.defn.weapon_type.value != "shield":
+                continue
+            for proj in self.projectiles:
+                if getattr(proj, 'owner_id', None) == weapon.owner_id:
+                    continue
+                # 圆-圆碰撞：盾牌中心 vs 投射物
+                dx = weapon.x - proj.x
+                dy = weapon.y - proj.y
+                # 盾牌碰撞半径使用视觉尺寸的一半
+                shield_r = (weapon.defn.length + weapon.defn.width) / 4
+                proj_r = getattr(proj, 'radius', 5)
+                if math.hypot(dx, dy) < shield_r + proj_r:
+                    proj._hit = True
 
     # ── Win condition ────────────────────────────────────────────────────────
     def check_win_condition(self):
@@ -656,22 +845,20 @@ class Game:
 
         # Skill info below center
         for p, bar_x in [(p1, bar_x1), (p2, bar_x2)]:
+            infos: list[tuple[str, tuple[int, int, int]]] = []
             if p.char.skill is not None:
-                info = f"{p.char.skill.name} ({p.char.skill.cooldown:.1f}s)"
-                color = p.char.skill.color
-            elif p.char.lightning_skill is not None:
-                info = f"{p.char.lightning_skill.name} ({p.char.lightning_skill.cooldown:.1f}s)"
-                color = p.char.lightning_skill.color
-            elif p.char.pet_skill is not None:
-                info = f"{p.char.pet_skill.name} ({p.char.pet_skill.cooldown:.1f}s)"
-                color = p.char.pet_skill.color
-            elif p.char.weapon_skill is not None:
-                info = f"{p.char.weapon_skill.name} ({p.char.weapon_skill.cooldown:.1f}s)"
-                color = p.char.weapon_skill.color
-            else:
-                continue
-            surf = self.font_small.render(info, True, color)
-            self.screen.blit(surf, (bar_x + bar_w // 2 - surf.get_width() // 2, bar_y + bar_h + 10))
+                infos.append((f"{p.char.skill.name} ({p.char.skill.cooldown:.1f}s)", p.char.skill.color))
+            if p.char.lightning_skill is not None:
+                infos.append((f"{p.char.lightning_skill.name} ({p.char.lightning_skill.cooldown:.1f}s)", p.char.lightning_skill.color))
+            if p.char.lightning_trap is not None:
+                infos.append((f"{p.char.lightning_trap.name} ({p.char.lightning_trap.cooldown:.1f}s)", p.char.lightning_trap.trap_color))
+            if p.char.pet_skill is not None:
+                infos.append((f"{p.char.pet_skill.name} ({p.char.pet_skill.cooldown:.1f}s)", p.char.pet_skill.color))
+            if p.char.weapon_skill is not None:
+                infos.append((f"{p.char.weapon_skill.name} ({p.char.weapon_skill.cooldown:.1f}s)", p.char.weapon_skill.color))
+            for k, (info, color) in enumerate(infos):
+                surf = self.font_small.render(info, True, color)
+                self.screen.blit(surf, (bar_x + bar_w // 2 - surf.get_width() // 2, bar_y + bar_h + 10 + k * 14))
 
     def draw_game_over(self):
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
@@ -694,6 +881,7 @@ class Game:
         self.player2 = None
         self.projectiles = []
         self.lightning_bolts = []
+        self.lightning_traps = []
         self.pets = []
         self.weapons = []
         self.game_over = False
@@ -723,6 +911,8 @@ class Game:
                 self.player2.skill_timer += dt
                 self.player1.lightning_timer += dt
                 self.player2.lightning_timer += dt
+                self.player1.lightning_trap_timer += dt
+                self.player2.lightning_trap_timer += dt
                 self.player1.pet_timer += dt
                 self.player2.pet_timer += dt
 
@@ -730,6 +920,8 @@ class Game:
                 self.try_use_skill(self.player2)
                 self.try_use_lightning(self.player1)
                 self.try_use_lightning(self.player2)
+                self.try_use_lightning_trap(self.player1)
+                self.try_use_lightning_trap(self.player2)
                 self.try_use_pet(self.player1)
                 self.try_use_pet(self.player2)
 
@@ -747,6 +939,9 @@ class Game:
                 for bolt in self.lightning_bolts:
                     bolt.update(dt)
                 self.lightning_bolts = [b for b in self.lightning_bolts if not b.is_expired()]
+                for trap in self.lightning_traps:
+                    trap.update(dt)
+                self.lightning_traps = [t for t in self.lightning_traps if not t.is_expired()]
                 for pet in self.pets:
                     pet.update(dt)
                 self.pets = [p for p in self.pets if not p.is_expired()]
@@ -759,13 +954,19 @@ class Game:
                 # Collisions
                 self.check_collisions()
                 self.check_trail_collisions()
+                self.check_spider_web_collisions()
+                self.check_spider_web_pet_collisions()
                 self.check_lightning_collisions()
+                self.check_lightning_trap_player_collisions()
+                self.check_lightning_trap_pet_collisions()
                 self.check_pet_player_collisions()
+                self.check_pet_pet_collisions()
                 self.check_projectile_pet_collisions()
                 self.check_lightning_pet_collisions()
                 self.check_trail_pet_collisions()
                 self.check_weapon_collisions()
                 self.check_weapon_pet_collisions()
+                self.check_shield_projectile_collisions()
 
                 # Win condition
                 self.check_win_condition()
@@ -787,6 +988,8 @@ class Game:
                 # Draw lightning bolts (between trails and projectiles)
                 for bolt in self.lightning_bolts:
                     bolt.draw(self.screen)
+                for trap in self.lightning_traps:
+                    trap.draw(self.screen)
 
                 # Draw pets
                 for pet in self.pets:
