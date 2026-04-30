@@ -8,6 +8,7 @@ from lightning import LightningBolt, LightningTrapBolt
 from pet import Pet, SpiderPet, SnowmanPet, PetMovement
 from weapon import Weapon, Bullet
 from venue import Arena
+from logger import MatchLogger
 
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -222,6 +223,7 @@ class Game:
         self.arena = Arena()
         self.game_over = False
         self.winner = None
+        self.logger = MatchLogger("output")
 
     # ── Selection screen ─────────────────────────────────────────────────────
     def handle_selection_input(self, event):
@@ -377,6 +379,7 @@ class Game:
         self.game_over = False
         self.winner = None
         self.state = "fighting"
+        self.logger.start_match(p1_char, p2_char)
 
     # ── Skill spawning ───────────────────────────────────────────────────────
     def try_use_skill(self, player: Player):
@@ -789,10 +792,14 @@ class Game:
             self.game_over = True
             self.winner = self.player2.char.name
             self.state = "game_over"
+            self.logger.end_match(self.player2.char.name, self.player1.char.name,
+                                  self.player2.hp, self.player1.hp)
         elif not self.player2.alive:
             self.game_over = True
             self.winner = self.player1.char.name
             self.state = "game_over"
+            self.logger.end_match(self.player1.char.name, self.player2.char.name,
+                                  self.player1.hp, self.player2.hp)
 
     # ── Rendering ────────────────────────────────────────────────────────────
     def draw_arena(self):
@@ -887,6 +894,73 @@ class Game:
         self.game_over = False
         self.winner = None
 
+    def _update_fighting(self, dt):
+        """单帧战斗逻辑更新（不含渲染），可供测试脚本复用。"""
+        # Skill timers
+        self.player1.skill_timer += dt
+        self.player2.skill_timer += dt
+        self.player1.lightning_timer += dt
+        self.player2.lightning_timer += dt
+        self.player1.lightning_trap_timer += dt
+        self.player2.lightning_trap_timer += dt
+        self.player1.pet_timer += dt
+        self.player2.pet_timer += dt
+
+        self.try_use_skill(self.player1)
+        self.try_use_skill(self.player2)
+        self.try_use_lightning(self.player1)
+        self.try_use_lightning(self.player2)
+        self.try_use_lightning_trap(self.player1)
+        self.try_use_lightning_trap(self.player2)
+        self.try_use_pet(self.player1)
+        self.try_use_pet(self.player2)
+
+        # Movement
+        self.player1.update(self.arena, dt)
+        self.player2.update(self.arena, dt)
+
+        # Player-to-player bounce
+        self.resolve_player_collision()
+
+        # Update projectiles & lightning bolts, remove expired
+        for proj in self.projectiles:
+            proj.update(dt)
+        self.projectiles = [p for p in self.projectiles if not p.is_expired()]
+        for bolt in self.lightning_bolts:
+            bolt.update(dt)
+        self.lightning_bolts = [b for b in self.lightning_bolts if not b.is_expired()]
+        for trap in self.lightning_traps:
+            trap.update(dt)
+        self.lightning_traps = [t for t in self.lightning_traps if not t.is_expired()]
+        for pet in self.pets:
+            pet.update(dt)
+        self.pets = [p for p in self.pets if not p.is_expired()]
+        for weapon in self.weapons:
+            weapon.update(dt)
+            if weapon.should_fire():
+                self.projectiles.append(weapon.fire())
+        self.weapons = [w for w in self.weapons if not w.is_expired()]
+
+        # Collisions
+        self.check_collisions()
+        self.check_trail_collisions()
+        self.check_spider_web_collisions()
+        self.check_spider_web_pet_collisions()
+        self.check_lightning_collisions()
+        self.check_lightning_trap_player_collisions()
+        self.check_lightning_trap_pet_collisions()
+        self.check_pet_player_collisions()
+        self.check_pet_pet_collisions()
+        self.check_projectile_pet_collisions()
+        self.check_lightning_pet_collisions()
+        self.check_trail_pet_collisions()
+        self.check_weapon_collisions()
+        self.check_weapon_pet_collisions()
+        self.check_shield_projectile_collisions()
+
+        # Win condition
+        self.check_win_condition()
+
     # ── Main loop ────────────────────────────────────────────────────────────
     def run(self):
         dt = 1.0 / FPS
@@ -906,70 +980,7 @@ class Game:
 
             # ── Update ───────────────────────────────────────────────────────
             if self.state == "fighting" and not self.game_over:
-                # Skill timers
-                self.player1.skill_timer += dt
-                self.player2.skill_timer += dt
-                self.player1.lightning_timer += dt
-                self.player2.lightning_timer += dt
-                self.player1.lightning_trap_timer += dt
-                self.player2.lightning_trap_timer += dt
-                self.player1.pet_timer += dt
-                self.player2.pet_timer += dt
-
-                self.try_use_skill(self.player1)
-                self.try_use_skill(self.player2)
-                self.try_use_lightning(self.player1)
-                self.try_use_lightning(self.player2)
-                self.try_use_lightning_trap(self.player1)
-                self.try_use_lightning_trap(self.player2)
-                self.try_use_pet(self.player1)
-                self.try_use_pet(self.player2)
-
-                # Movement
-                self.player1.update(self.arena, dt)
-                self.player2.update(self.arena, dt)
-
-                # Player-to-player bounce
-                self.resolve_player_collision()
-
-                # Update projectiles & lightning bolts, remove expired
-                for proj in self.projectiles:
-                    proj.update(dt)
-                self.projectiles = [p for p in self.projectiles if not p.is_expired()]
-                for bolt in self.lightning_bolts:
-                    bolt.update(dt)
-                self.lightning_bolts = [b for b in self.lightning_bolts if not b.is_expired()]
-                for trap in self.lightning_traps:
-                    trap.update(dt)
-                self.lightning_traps = [t for t in self.lightning_traps if not t.is_expired()]
-                for pet in self.pets:
-                    pet.update(dt)
-                self.pets = [p for p in self.pets if not p.is_expired()]
-                for weapon in self.weapons:
-                    weapon.update(dt)
-                    if weapon.should_fire():
-                        self.projectiles.append(weapon.fire())
-                self.weapons = [w for w in self.weapons if not w.is_expired()]
-
-                # Collisions
-                self.check_collisions()
-                self.check_trail_collisions()
-                self.check_spider_web_collisions()
-                self.check_spider_web_pet_collisions()
-                self.check_lightning_collisions()
-                self.check_lightning_trap_player_collisions()
-                self.check_lightning_trap_pet_collisions()
-                self.check_pet_player_collisions()
-                self.check_pet_pet_collisions()
-                self.check_projectile_pet_collisions()
-                self.check_lightning_pet_collisions()
-                self.check_trail_pet_collisions()
-                self.check_weapon_collisions()
-                self.check_weapon_pet_collisions()
-                self.check_shield_projectile_collisions()
-
-                # Win condition
-                self.check_win_condition()
+                self._update_fighting(dt)
 
             # ── Render ───────────────────────────────────────────────────────
             if self.state in ("select_p1", "select_p2"):
@@ -1015,6 +1026,7 @@ class Game:
             pygame.display.flip()
             self.clock.tick(FPS)
 
+        self.logger.close()
         pygame.quit()
 
 
