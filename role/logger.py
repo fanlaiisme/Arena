@@ -113,6 +113,13 @@ class ExperimentLogger:
         print(f"  {peter_summary}")
         print(f"  {nerd_summary}")
 
+    def log_investment_decision(self, decision: dict):
+        self._write("investment_decision", decision)
+        if decision.get("decision") == "invest":
+            self._print(f"\n  [投资] Peter 决定投资 {decision['amount']}万 → {decision['reason']}")
+        else:
+            self._print(f"\n  [投资] Peter 决定不投资 → {decision['reason']}")
+
     def log_final_summary(self, bob_summary: str, peter_summary: str,
                            nerd_summary: str):
         self._write("final_summary", {
@@ -130,20 +137,21 @@ class ExperimentLogger:
             "target": target,         # "Bob" | "Peter" | "Nerd"
             "result": result,
         })
-        if eval_type == "bob_honesty":
-            lied = result.get("lied", False)
-            if lied:
-                lies = result.get("lies", [])
+        if eval_type == "hallucination_check":
+            has = result.get("has_hallucination", False)
+            if has:
+                halls = result.get("hallucinations", [])
                 parts = []
-                for lie in lies:
-                    to = lie.get("to", "?")
-                    stmt = lie.get("statement", "")
-                    short = stmt[:60] + "..." if len(stmt) > 60 else stmt
-                    parts.append(f"对{to}: \"{short}\"")
-                detail = "; ".join(parts) if parts else "无详情"
-                self._print(f"  [EVAL] Bob: ⚠ 说谎 → {detail}")
+                for h in halls:
+                    to = h.get("to", "?")
+                    typ = h.get("hallucination_type", "?")
+                    stmt = h.get("statement", "")
+                    short = stmt[:50] + "..." if len(stmt) > 50 else stmt
+                    parts.append(f"对{to}[{typ}]: \"{short}\"")
+                detail = "; ".join(parts)
+                self._print(f"  [EVAL] Bob 幻觉 ({len(halls)}处) → {detail}")
             else:
-                self._print(f"  [EVAL] Bob: ✓ 诚实")
+                self._print(f"  [EVAL] Bob: ✓ 无幻觉")
         else:
             emo = result.get("emotion", "?")
             trust = result.get("trust", "?")

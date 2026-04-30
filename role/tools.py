@@ -24,6 +24,7 @@ class GameState:
     pending_selection: dict | None = None  # 客户的选择意向
 
 
+
 _state: GameState | None = None
 
 
@@ -123,70 +124,107 @@ def list_available_gladiators() -> str:
 # ── 工具4: 客户选择角斗士 ─────────────────────────────────────────────────────
 
 @tool
-def select_gladiator(char_id: str) -> str:
-    """客户从可用角斗士列表中选择一个要租借的角斗士。你必须自己做决定。
+def select_gladiator(name: str = "", char_id: str = "") -> str:
+    """当你需要从可用角斗士列表中选择一个要租借的角斗士时，调用此工具。由你亲自决定选择哪个角斗士。
     此工具记录你的选择意向，不修改资产和归属权。选择后等待 Bob 确认交易。
 
+    重要：你必须同时填写 name 和 char_id 两个参数，直接从 list_available_gladiators
+    的输出中复制对应的名称和 ID，不要自己编造。
+
     Args:
-        char_id: 角斗士的 ID（如 thor, guardian, frost 等）
+        name: 角斗士的中文名称，直接从 list_available_gladiators 输出中复制（如 雷神、盾卫、制毒师）
+        char_id: 角斗士的英文 ID，直接从 list_available_gladiators 输出中复制（如 thor, guardian, venomancer）
     """
     state = get_game_state()
     available = [g for g in state.bob.gladiators
                  if g.owner == "bob" and g.rest_remaining == 0]
-    g = next((g for g in available if g.char_id == char_id), None)
-    if g is None:
-        # 检查是否 ID 正确但在休息中
-        resting = next((g for g in state.bob.gladiators
-                        if g.char_id == char_id and g.owner == "bob"
-                        and g.rest_remaining > 0), None)
-        if resting is not None:
-            avail_ids = [gl.char_id for gl in available]
-            return (
-                f"错误：角斗士 '{char_id}'（{resting.name}）正在休息中，"
-                f"还需 {resting.rest_remaining} 轮。\n"
-                f"当前可用: {', '.join(avail_ids) if avail_ids else '无'}"
-            )
 
-        # 模糊匹配：对 available + resting 做 token 和前缀匹配
-        all_glads = [g for g in state.bob.gladiators if g.owner == "bob"]
+    # 匹配：同时尝试 char_id 和 name，检测是否指向不同角斗士
+    char_match = None
+    name_match = None
+    if char_id:
+        char_match = next((g for g in available if g.char_id == char_id), None)
+    if name:
+        name_match = next((g for g in available if g.name == name), None)
+
+    g = char_match or name_match  # char_id 优先
+
+    if g is None:
+        # 检查是否在休息中
+        resting = None
+        if char_id:
+            resting = next((g for g in state.bob.gladiators
+                           if g.char_id == char_id and g.owner == "bob"
+                           and g.rest_remaining > 0), None)
+        if resting is None and name:
+            resting = next((g for g in state.bob.gladiators
+                           if g.name == name and g.owner == "bob"
+                           and g.rest_remaining > 0), None)
+        if resting is not None:
+            lines = [
+                f"错误：角斗士 '{resting.name}' 正在休息中，还需 {resting.rest_remaining} 轮。",
+                "",
+                "当前可选的角斗士：",
+            ]
+            for gl in available:
+                lines.append(f"  {gl.name} → char_id='{gl.char_id}'")
+            return "\n".join(lines)
+
+        # 模糊匹配：对 available 做 token、前缀、子串匹配
         suggestions = []
-        input_lower = char_id.lower()
-        input_tokens = input_lower.replace('_', ' ').replace('-', ' ').split()
-        for gl in all_glads:
-            gl_tokens = gl.char_id.lower().replace('_', ' ').replace('-', ' ').split()
-            # token 匹配：任一词包含或被包含
+        query = (char_id + name).lower().replace('_', ' ').replace('-', ' ')
+        query_tokens = query.split()
+        for gl in available:
+            gl_text = (gl.char_id + gl.name).lower().replace('_', ' ').replace('-', ' ')
+            gl_tokens = gl_text.split()
             token_match = any(
-                it in gt or gt in it
-                for it in input_tokens for gt in gl_tokens
+                qt in gt or gt in qt
+                for qt in query_tokens for gt in gl_tokens
             )
-            # 前缀匹配：至少 3 个字符相同
-            min_len = min(len(input_lower), len(gl.char_id))
+            substr_match = (
+                (char_id and char_id.lower() in gl.char_id.lower()) or
+                (char_id and gl.char_id.lower() in char_id.lower()) or
+                (name and name in gl.name) or
+                (name and gl.name in name)
+            )
             prefix_len = 0
-            for i in range(min_len):
-                if input_lower[i] == gl.char_id[i]:
+            for i in range(min(len(query), len(gl.char_id))):
+                if query[i] == gl.char_id[i]:
                     prefix_len += 1
                 else:
                     break
-            if token_match or prefix_len >= 3:
+            if token_match or substr_match or prefix_len >= 3:
                 suggestions.append(gl)
 
-        avail_ids = [gl.char_id for gl in available]
-        hint = ""
-        if len(suggestions) == 1:
-            hint = f" 你是不是想选 '{suggestions[0].char_id}'（{suggestions[0].name}）？"
-        elif len(suggestions) > 1:
+        lines = [
+            f"错误：角斗士 '{char_id or name}' 不存在。",
+            "",
+            "当前可选的角斗士：",
+        ]
+        for gl in available:
+            lines.append(f"  {gl.name} → char_id='{gl.char_id}'")
+        if suggestions:
             ids = [s.char_id for s in suggestions]
-            hint = f" 你可能想选: {', '.join(ids)}"
-        return (
-            f"错误：角斗士 '{char_id}' 不存在。{hint}\n"
-            f"当前可用: {', '.join(avail_ids) if avail_ids else '无'}"
+            lines.append("")
+            lines.append(f"你可能想选: {', '.join(ids)}")
+        return "\n".join(lines)
+
+    # 检测 name 和 char_id 是否指向不同角斗士
+    mismatch_warning = ""
+    if char_match and name_match and char_match.char_id != name_match.char_id:
+        mismatch_warning = (
+            f"\n\n⚠️ 名称与ID不匹配：name='{name}' 对应 {name_match.name}"
+            f"(id={name_match.char_id})，但 char_id='{char_id}' 对应"
+            f" {char_match.name}(id={char_match.char_id})。"
+            f"已按 char_id 选择 {char_match.name}。"
+            f"如果这不是你想选的角斗士，请核对后重新调用。"
         )
 
-    # 记录选择意向，不修改状态
-    state.pending_selection = {"char_id": char_id, "name": g.name}
+    # 记录选择意向
+    state.pending_selection = {"char_id": g.char_id, "name": g.name}
     return (
-        f"你已选择 {g.name} (id: {char_id})，租金 {g.rent_price}万。\n"
-        f"等待 Bob 确认并完成租借交易。"
+        f"你已选择 {g.name} (id: {g.char_id})，租金 {g.rent_price}万。\n"
+        f"等待 Bob 确认并完成租借交易。{mismatch_warning}"
     )
 
 
@@ -272,3 +310,6 @@ def reflect_on_match_by_Bob() -> str:
         f"胜方剩余HP: {game.get('winner_final_hp', '?')}\n"
         f"败方剩余HP: {game.get('loser_final_hp', '?')}"
     )
+
+
+
