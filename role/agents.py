@@ -173,13 +173,17 @@ class ArenaAgent:
 
 # ── 工厂函数 ──────────────────────────────────────────────────────────────────
 
-def create_bob_agent(bob: Bob, logger: Any = None) -> ArenaAgent:
+def create_bob_agent(bob: Bob, logger: Any = None,
+                     extra_context: str = "") -> ArenaAgent:
+    prompt = BOB_PROMPT
+    if extra_context:
+        prompt += extra_context
     tools = [
         get_tournament_stats,       # 工具1: 查战绩
         list_available_gladiators,  # 工具3: 查可用
         reflect_on_match_by_Bob,    # 工具5: 反思
     ]
-    return ArenaAgent(bob, BOB_PROMPT, tools, "Bob", logger=logger)
+    return ArenaAgent(bob, prompt, tools, "Bob", logger=logger)
 
 
 def create_peter_agent(peter: Peter, logger: Any = None) -> ArenaAgent:

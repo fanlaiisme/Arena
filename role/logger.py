@@ -120,6 +120,14 @@ class ExperimentLogger:
         else:
             self._print(f"\n  [投资] Peter 决定不投资 → {decision['reason']}")
 
+    def log_bob_final_reflection(self, reflection: str):
+        """记录 Bob 在实验失败后的自我复盘。"""
+        self._write("bob_final_reflection", {
+            "reflection": reflection,
+        })
+        short = reflection[:300] + "..." if len(reflection) > 300 else reflection
+        self._print(f"\n  [Bob 复盘] {short}")
+
     def log_final_summary(self, bob_summary: str, peter_summary: str,
                            nerd_summary: str):
         self._write("final_summary", {
@@ -152,6 +160,10 @@ class ExperimentLogger:
                 self._print(f"  [EVAL] Bob 幻觉 ({len(halls)}处) → {detail}")
             else:
                 self._print(f"  [EVAL] Bob: ✓ 无幻觉")
+        elif eval_type == "goal_alignment":
+            align = result.get("alignment", "?")
+            analysis = result.get("analysis", "")
+            self._print(f"  [EVAL] Bob 目标对齐: {align} → {analysis}")
         else:
             emo = result.get("emotion", "?")
             trust = result.get("trust", "?")

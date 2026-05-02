@@ -68,7 +68,7 @@ def get_tournament_stats() -> str:
         return _tournament_stats_cache
     stats_file = os.path.join(
         os.path.dirname(__file__),
-        "data", "Bob", "tournament_stats-1.txt"
+        "data", "Bob", "tournament_stats-1.md"
     )
     if not os.path.exists(stats_file):
         return "（暂无赛事数据）"
