@@ -149,8 +149,9 @@ class Pet:
             self.shock_timer = max(0.0, self.shock_timer - dt)
             self.take_damage(self.shock_dps * dt)
 
-        # Determine target position
-        if self.target is not None and self.target.alive:
+        # Determine target position（目标隐身时保持直走）
+        if (self.target is not None and self.target.alive
+                and not getattr(self.target, 'invisible', False)):
             tx, ty = self.target.x, self.target.y
         else:
             # Keep moving in current heading direction
@@ -564,8 +565,9 @@ class SpiderPet:
             if dist < threshold:
                 dmg = self.defn.damage * 0.016  # ~5 DPS at 60fps
                 player.take_damage(dmg)
-                player.slow_mult = self._web_slow_mult()
-                player.slow_timer = 0.15
+                if getattr(player, 'unstoppable_timer', 0) <= 0:
+                    player.slow_mult = self._web_slow_mult()
+                    player.slow_timer = 0.15
                 return True
         return False
 
@@ -779,8 +781,9 @@ class SnowmanPet(Pet):
 
         head_x, head_y = self.segments[0]
 
-        # Determine target position
-        if self.target is not None and self.target.alive:
+        # Determine target position（目标隐身时停在原地）
+        if (self.target is not None and self.target.alive
+                and not getattr(self.target, 'invisible', False)):
             tx, ty = self.target.x, self.target.y
         else:
             tx, ty = head_x, head_y
@@ -818,7 +821,7 @@ class SnowmanPet(Pet):
         dx = head_x - player.x
         dy = head_y - player.y
         if math.hypot(dx, dy) < player.radius + self._head_radius():
-            if self.defn.slow_mult > 0:
+            if self.defn.slow_mult > 0 and getattr(player, 'unstoppable_timer', 0) <= 0:
                 player.slow_mult = self.defn.slow_mult
                 player.slow_timer = self.defn.slow_duration
             return True
@@ -938,3 +941,85 @@ class SnowmanPet(Pet):
             else:
                 hp_color = (220, 50, 50)
             pygame.draw.rect(screen, hp_color, (bar_x, bar_y, int(bar_w * hp_ratio), bar_h))
+
+
+class GhostPet:
+    """幽灵宠物 —— 穿透一切障碍物和攻击，碰到敌人造成伤害+恐惧后消失。"""
+
+    def __init__(self, x: float, y: float, owner_id: str, target, defn: PetDef):
+        self.owner_id = owner_id
+        self.target = target
+        self.defn = defn
+        self.age = 0.0
+        self._spent = False
+        self._head_radius_val = defn.body_width * 0.5
+        self.x = float(x)
+        self.y = float(y)
+
+    def _head_radius(self) -> float:
+        return self._head_radius_val
+
+    def update(self, dt: float):
+        self.age += dt
+        if (self.target is not None and self.target.alive
+                and not getattr(self.target, 'invisible', False)):
+            tx, ty = self.target.x, self.target.y
+        else:
+            tx, ty = self.x, self.y
+
+        dx = tx - self.x
+        dy = ty - self.y
+        dist = math.hypot(dx, dy)
+        if dist > 0.001:
+            speed = self.defn.speed
+            self.x += dx / dist * speed * dt
+            self.y += dy / dist * speed * dt
+
+        dx_c = self.x - ARENA_CENTER[0]
+        dy_c = self.y - ARENA_CENTER[1]
+        dist_c = math.hypot(dx_c, dy_c)
+        limit = ARENA_RADIUS - self.defn.body_width * 0.5
+        if dist_c > limit and dist_c > 0.001:
+            self.x = ARENA_CENTER[0] + dx_c / dist_c * limit
+            self.y = ARENA_CENTER[1] + dy_c / dist_c * limit
+
+    def is_expired(self) -> bool:
+        if self._spent:
+            return True
+        if self.defn.lifetime is not None and self.age >= self.defn.lifetime:
+            return True
+        return False
+
+    def take_damage(self, amount: float):
+        pass
+
+    def head_collides_with_circle(self, cx: float, cy: float, cr: float) -> bool:
+        return math.hypot(self.x - cx, self.y - cy) < self._head_radius() + cr
+
+    def collides_with(self, player) -> bool:
+        return math.hypot(self.x - player.x, self.y - player.y) < player.radius + self._head_radius()
+
+    def draw(self, screen):
+        cx, cy = int(self.x), int(self.y)
+        alpha_base = 140
+        for i in range(3):
+            r = self._head_radius_val + i * 5
+            a = alpha_base // (i + 2)
+            surf = pygame.Surface((int(r * 2 + 4), int(r * 2 + 4)), pygame.SRCALPHA)
+            pygame.draw.circle(surf, (200, 200, 240, a),
+                               (int(r) + 2, int(r) + 2), int(r))
+            screen.blit(surf, (cx - int(r) - 2, cy - int(r) - 2))
+        core = pygame.Surface((24, 34), pygame.SRCALPHA)
+        pygame.draw.ellipse(core, (180, 190, 230, 180), core.get_rect())
+        pygame.draw.ellipse(core, (140, 150, 200, 200), core.get_rect(), 1)
+        screen.blit(core, (cx - 12, cy - 17))
+        pygame.draw.circle(screen, (255, 255, 255), (cx - 3, cy - 6), 2)
+        pygame.draw.circle(screen, (255, 255, 255), (cx + 3, cy - 6), 2)
+        tail_x = cx - int(math.cos(self.age * 3.0) * 8)
+        tail_y = cy - int(math.sin(self.age * 3.0) * 8)
+        for i in range(3):
+            t = (i + 1) / 4
+            px = int(cx + (tail_x - cx) * t)
+            py = int(cy + (tail_y - cy) * t)
+            a = int(60 * (1.0 - t))
+            pygame.draw.circle(screen, (200, 210, 240, a), (px, py), 3 - i)
