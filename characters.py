@@ -61,7 +61,7 @@ SNOWMAN_PET = PetDef(
     segment_count=0,
     wiggle_amplitude=0.0,
     wiggle_frequency=0.0,
-    movement_type=PetMovement.CHASE,
+    movement_type=PetMovement.SNOWMAN,
     slow_mult=0.0,
     slow_duration=0.0,
 )
@@ -79,7 +79,7 @@ GHOST_PET = PetDef(
     segment_count=0,
     wiggle_amplitude=0.0,
     wiggle_frequency=0.0,
-    movement_type=PetMovement.CHASE,
+    movement_type=PetMovement.GHOST,
 )
 
 # ── 预设电系技能定义 ──────────────────────────────────────────────────────────────────

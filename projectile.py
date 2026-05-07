@@ -40,11 +40,12 @@ class Projectile:
     """一个由技能生成的投射物实例，具有独立的移动行为和存留时间。"""
 
     def __init__(self, x: float, y: float, owner_id: str,
-                 skill: SkillDef, owner=None):
+                 skill: SkillDef, owner=None, owner_team: int = 0):
         self.x = x
         self.y = y
         self.owner_id = owner_id        # 发射者的角色 id
         self.owner = owner              # 发射者引用（orbit 模式需要跟踪位置）
+        self.owner_team = owner_team
         self.skill = skill
         self.age = 0.0                  # 已存留时间
         self._hit = False               # 命中后立即消失
@@ -183,11 +184,12 @@ class ShadowClone:
     """忍者影分身：镜像移动 + 周期性位置互换迷惑追踪。"""
 
     def __init__(self, owner, spawn_x: float, spawn_y: float,
-                 skill):
+                 skill, owner_team: int = 0):
         self.x = spawn_x
         self.y = spawn_y
         self.owner = owner
         self.owner_id = owner.char.id
+        self.owner_team = owner_team
         self.skill = skill
         self.radius = owner.radius
         self.color = owner.char.color
@@ -244,11 +246,13 @@ class ShadowClone:
 class GoldenPalm:
     """武僧技能：金色手掌从天而降，造成范围伤害。"""
 
-    def __init__(self, x: float, y: float, owner_id: str, skill, scale: float = 1.5):
+    def __init__(self, x: float, y: float, owner_id: str, skill, scale: float = 1.5,
+                 owner_team: int = 0):
         self.x = x
         self.y = y
         self.owner_id = owner_id
         self.skill = skill
+        self.owner_team = owner_team
         self.scale = scale
         self.radius = 55.0 * scale
         self.age = 0.0
@@ -378,7 +382,8 @@ class FistTrap:
     """兽人技能：左右侧握拳，指节朝向敌人砸出。"""
 
     def __init__(self, lx: float, ly: float, rx: float, ry: float,
-                 owner_id: str, skill, facing_angle: float = 0.0):
+                 owner_id: str, skill, facing_angle: float = 0.0,
+                 owner_team: int = 0):
         self.lx = lx
         self.ly = ly
         self.rx = rx
@@ -386,6 +391,7 @@ class FistTrap:
         self.x = (lx + rx) / 2
         self.y = (ly + ry) / 2
         self.owner_id = owner_id
+        self.owner_team = owner_team
         self.skill = skill
         self.radius = 100.0
         self.age = 0.0
@@ -540,11 +546,13 @@ class FistTrap:
 class VortexEntity:
     """海洋漩涡：将范围内敌人螺旋吸入中心，造成伤害并锁定技能。"""
 
-    def __init__(self, x: float, y: float, owner_id: str, skill):
+    def __init__(self, x: float, y: float, owner_id: str, skill,
+                 owner_team: int = 0):
         self.x = x
         self.y = y
         self.owner_id = owner_id
         self.skill = skill
+        self.owner_team = owner_team
         self.radius = 120.0
         self.core_radius = 12.0
         self.age = 0.0
@@ -579,7 +587,7 @@ class VortexEntity:
         return True
 
     def apply_to_player(self, player) -> bool:
-        if not player.alive or player.char.id == self.owner_id:
+        if not player.alive or player.team == self.owner_team:
             return False
         dist = math.hypot(self.x - player.x, self.y - player.y)
         if dist > self.radius:
@@ -595,7 +603,7 @@ class VortexEntity:
         return False
 
     def apply_to_pet(self, pet) -> bool:
-        if pet.owner_id == self.owner_id:
+        if pet.owner_team == self.owner_team:
             return False
         px, py = pet.segments[0] if hasattr(pet, 'segments') else (pet.x, pet.y)
         dist = math.hypot(self.x - px, self.y - py)
@@ -706,11 +714,12 @@ class WaveEntity:
     """潮汐使者技能：120° 弧形波纹向外扩散，距离越远颜色越浅。"""
 
     def __init__(self, x: float, y: float, angle: float,
-                 owner_id: str, skill):
+                 owner_id: str, skill, owner_team: int = 0):
         self.x = x
         self.y = y
         self.angle = angle
         self.owner_id = owner_id
+        self.owner_team = owner_team
         self.skill = skill
         self.age = 0.0
         self.lifetime = 1.4
@@ -754,7 +763,7 @@ class WaveEntity:
         return math.hypot(px - cx, py - cy)
 
     def collides_with_player(self, player) -> bool:
-        if player.char.id == self.owner_id or id(player) in self._hit_targets:
+        if player.team == self.owner_team or id(player) in self._hit_targets:
             return False
         threshold = player.radius + 4
         for i in range(len(self._segments) - 1):
@@ -766,7 +775,7 @@ class WaveEntity:
         return False
 
     def collides_with_pet(self, pet) -> bool:
-        if pet.owner_id == self.owner_id or id(pet) in self._hit_targets:
+        if pet.owner_team == self.owner_team or id(pet) in self._hit_targets:
             return False
         px, py = pet.segments[0] if hasattr(pet, 'segments') else (pet.x, pet.y)
         pr = getattr(pet, '_head_radius', lambda: 5)()
@@ -801,11 +810,13 @@ class HuntMark:
     0.9秒延迟后传送主人到中心并造成速度加成的AOE伤害。"""
 
     def __init__(self, x: float, y: float, owner_id: str, skill,
-                 saved_speed: float = 0.0, saved_angle: float = 0.0):
+                 saved_speed: float = 0.0, saved_angle: float = 0.0,
+                 owner_team: int = 0):
         self.x = x
         self.y = y
         self.owner_id = owner_id
         self.skill = skill
+        self.owner_team = owner_team
         self.radius = 90.0
         self.age = 0.0
         self.lifetime = 1.5
@@ -858,10 +869,11 @@ class HuntMark:
 class TreeEntity:
     """森林精灵技能-生命之树：长方形树干碰撞 + 治疗光环。40 HP，碰撞弹开角色。"""
 
-    def __init__(self, x: float, y: float, owner_id: str):
+    def __init__(self, x: float, y: float, owner_id: str, owner_team: int = 0):
         self.x = x
         self.y = y
         self.owner_id = owner_id
+        self.owner_team = owner_team
         self.hp = 40.0
         self.trunk_w = 26             # 树干碰撞宽度
         self.trunk_h = 50             # 树干碰撞高度
@@ -922,7 +934,7 @@ class TreeEntity:
 
     def try_heal(self, player, dt: float) -> bool:
         """检测玩家是否在治疗光环内，若是则按 heal_rate 回血（仅主人）。"""
-        if player.char.id != self.owner_id:
+        if player.team != self.owner_team:
             return False
         dist = math.hypot(player.x - self.x, player.y - self.y)
         if dist > self.heal_radius + player.radius:
@@ -1027,10 +1039,12 @@ class LeafBlade:
     FIRING = "firing"
     EXPIRED = "expired"
 
-    def __init__(self, owner, opponent, start_angle: float, skill, shoot_index: int):
+    def __init__(self, owner, opponent, start_angle: float, skill, shoot_index: int,
+                 owner_team: int = 0):
         self.owner = owner
         self.opponent = opponent
         self.owner_id = owner.char.id
+        self.owner_team = owner_team
         self.skill = skill
         self.state = self.ORBIT
         self.orbit_radius = 70.0
@@ -1153,13 +1167,15 @@ class CrescentBeam:
 
     def __init__(self, x: float, y: float, angle: float, owner_id: str,
                  damage: float, color: tuple[int, int, int],
-                 lifetime: float, speed: float, size: int):
+                 lifetime: float, speed: float, size: int,
+                 owner_team: int = 0):
         self.x = x
         self.y = y
         self.angle = angle
         self.vx = math.cos(angle) * speed
         self.vy = math.sin(angle) * speed
         self.owner_id = owner_id
+        self.owner_team = owner_team
         self.skill = _BeamProxy(damage, size // 2)
         self.radius = size // 2
         self.lifetime = lifetime
@@ -1207,7 +1223,7 @@ class CrescentBeam:
         if math.hypot(dbx, dby) + player.radius <= self.R:
             return False
         # 每目标冷却
-        target_id = player.char.id
+        target_id = id(player)
         last = self._hit_targets.get(target_id, -999.0)
         if self.age - last < self._hit_cd:
             return False
@@ -1276,13 +1292,15 @@ class VerticalBeam:
 
     def __init__(self, x: float, y: float, angle: float, owner_id: str,
                  damage: float, color: tuple[int, int, int],
-                 lifetime: float, speed: float, length: float, width: float):
+                 lifetime: float, speed: float, length: float, width: float,
+                 owner_team: int = 0):
         self.x = x
         self.y = y
         self.angle = angle
         self.vx = math.cos(angle) * speed
         self.vy = math.sin(angle) * speed
         self.owner_id = owner_id
+        self.owner_team = owner_team
         self.skill = _BeamProxy(damage, int(math.hypot(length / 2, width / 2)))
         self.radius = int(math.hypot(length / 2, width / 2))
         self.lifetime = lifetime
@@ -1324,7 +1342,7 @@ class VerticalBeam:
         if perp > self.half_len + player.radius:
             return False
 
-        target_id = player.char.id
+        target_id = id(player)
         last = self._hit_targets.get(target_id, -999.0)
         if self.age - last < self._hit_cd:
             return False

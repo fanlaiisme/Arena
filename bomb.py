@@ -15,6 +15,12 @@ class BombType(Enum):
     GAS = "gas"
 
 
+class BombState(Enum):
+    THROW = "throw"
+    PRIMED = "primed"
+    EXPLODED = "exploded"
+
+
 @dataclass
 class BombDef:
     """炸弹技能的定义数据。"""
@@ -43,13 +49,22 @@ class BombDef:
     gas_cloud_radius: float = 0.0
     gas_cloud_color: tuple[int, int, int] = (0, 0, 0)
 
+    def damage_at_distance(self, dist: float) -> float:
+        """根据爆炸中心距离计算伤害 (带最小伤害保底和线性衰减)。"""
+        if dist >= self.explosion_radius:
+            return self.damage * self.min_damage_ratio
+        ratio = 1.0 - (1.0 - self.min_damage_ratio) * (dist / self.explosion_radius)
+        ratio = max(self.min_damage_ratio, min(1.0, ratio))
+        return self.damage * ratio
+
 
 class Bomb:
     """投掷炸弹实体 —— THROW → PRIMED → EXPLODED 三阶段状态机。"""
 
     def __init__(self, x: float, y: float, target_x: float, target_y: float,
-                 owner_id: str, defn: BombDef, is_child: bool = False):
+                 owner_id: str, defn: BombDef, is_child: bool = False, owner_team: int = 0):
         self.owner_id = owner_id
+        self.owner_team = owner_team
         self.is_child = is_child
         self.defn = defn
         self.start_x = float(x)
@@ -58,19 +73,24 @@ class Bomb:
         self.target_y = target_y
         self.x = float(x)
         self.y = float(y)
-        self.state = "THROW"
+        self.state = BombState.THROW
         self.age = 0.0
         self._explosion_processed = False
         self._height_t = 0.0            # 抛物线高度模拟参数 (0~1, 峰值=1)
         self._fuse_seed = random.uniform(0, 100)
         self._flash_alpha = 0           # 爆炸闪光 alpha
+        self._throw_duration = self.defn.throw_distance / max(self.defn.throw_speed, 0.001)
+
+    @property
+    def explosion_ready(self) -> bool:
+        """Ready for explosion-damage processing: just exploded, not yet processed."""
+        return self.state == BombState.EXPLODED and not self._explosion_processed
 
     def update(self, dt: float):
         self.age += dt
 
-        if self.state == "THROW":
-            throw_duration = self.defn.throw_distance / self.defn.throw_speed
-            progress = min(self.age / throw_duration, 1.0)
+        if self.state == BombState.THROW:
+            progress = min(self.age / self._throw_duration, 1.0)
             # ease-out quad 缓动，模拟减速落地
             t = 1.0 - (1.0 - progress) ** 2
             self.x = self.start_x + (self.target_x - self.start_x) * t
@@ -79,26 +99,26 @@ class Bomb:
             self._height_t = math.sin(progress * math.pi)
 
             if progress >= 1.0:
-                self.state = "PRIMED"
+                self.state = BombState.PRIMED
                 self.age = 0.0
 
-        elif self.state == "PRIMED":
+        elif self.state == BombState.PRIMED:
             if self.age >= self.defn.detonate_delay:
-                self.state = "EXPLODED"
+                self.state = BombState.EXPLODED
                 self._flash_alpha = 255
 
-        elif self.state == "EXPLODED":
+        elif self.state == BombState.EXPLODED:
             self._flash_alpha = max(0, self._flash_alpha - 1200 * dt)
 
     def is_expired(self) -> bool:
-        return self.state == "EXPLODED" and self._explosion_processed
+        return self.state == BombState.EXPLODED and self._explosion_processed
 
     def draw(self, screen):
-        if self.state == "THROW":
+        if self.state == BombState.THROW:
             self._draw_thrown(screen)
-        elif self.state == "PRIMED":
+        elif self.state == BombState.PRIMED:
             self._draw_primed(screen)
-        elif self.state == "EXPLODED" and self._flash_alpha > 0:
+        elif self.state == BombState.EXPLODED and self._flash_alpha > 0:
             self._draw_flash(screen)
 
     # ── THROW 阶段绘制 ──────────────────────────────────────────────────────
@@ -239,8 +259,9 @@ class Bomb:
 class GasCloud:
     """持续毒雾实体 —— 对范围内敌人施加 DoT + 减速。"""
 
-    def __init__(self, x: float, y: float, owner_id: str, defn: BombDef):
+    def __init__(self, x: float, y: float, owner_id: str, defn: BombDef, owner_team: int = 0):
         self.x = x
+        self.owner_team = owner_team
         self.y = y
         self.owner_id = owner_id
         self.radius = defn.gas_cloud_radius

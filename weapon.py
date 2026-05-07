@@ -84,11 +84,12 @@ class Bullet:
     """手枪发射的瞬态子弹，可被 self.projectiles 的更新/过期/碰撞流程统一管理。"""
 
     def __init__(self, x: float, y: float, target_x: float, target_y: float,
-                 owner_id: str, defn: WeaponDef):
+                 owner_id: str, defn: WeaponDef, owner_team: int = 0):
         self.x = x
         self.y = y
         self.owner_id = owner_id
         self.defn = defn
+        self.owner_team = owner_team
         self.age = 0.0
         self.radius = defn.bullet_radius
         self.color = defn.bullet_color if defn.bullet_color is not None else defn.color
@@ -216,11 +217,12 @@ class Bullet:
 class HomingMissile:
     """追踪导弹 —— 发射后持续转向目标，带尾焰粒子。"""
 
-    def __init__(self, x: float, y: float, owner, opponent, defn):
+    def __init__(self, x: float, y: float, owner, opponent, defn, owner_team: int = 0):
         self.x = x
         self.y = y
         self.owner = owner
         self.owner_id = owner.char.id
+        self.owner_team = owner_team
         self._target = opponent
         self.defn = defn
         self.skill = _SkillProxy(defn.damage, defn.bullet_radius)
@@ -407,11 +409,12 @@ class ShurikenProjectile:
     """忍者飞镖：直线飞行 → 命中目标造成伤害消失 / 未命中卡在竞技场边界10秒成陷阱。"""
 
     def __init__(self, x: float, y: float, target_x: float, target_y: float,
-                 owner_id: str, defn: WeaponDef):
+                 owner_id: str, defn: WeaponDef, owner_team: int = 0):
         self.x = x
         self.y = y
         self.owner_id = owner_id
         self.defn = defn
+        self.owner_team = owner_team
         self.skill = _SkillProxy(defn.damage, defn.bullet_radius)
         self.radius = defn.bullet_radius
         self.age = 0.0
@@ -557,11 +560,12 @@ class ShurikenProjectile:
 class BoomerangProjectile:
     """回旋镖飞行实体：向外飞出，到达最大射程后折返飞回主人。"""
 
-    def __init__(self, x: float, y: float, owner, opponent, defn):
+    def __init__(self, x: float, y: float, owner, opponent, defn, owner_team: int = 0):
         self.x = x
         self.y = y
         self.owner = owner
         self.owner_id = owner.char.id
+        self.owner_team = owner_team
         self.defn = defn
         self.skill = _SkillProxy(defn.damage, defn.length // 2)
         self.radius = defn.length // 2
@@ -703,11 +707,12 @@ class BoomerangProjectile:
 class Weapon:
     """持久武器实体，附着于角色，根据 weapon_type 表现不同行为。"""
 
-    def __init__(self, owner, opponent, defn: WeaponDef):
+    def __init__(self, owner, opponent, defn: WeaponDef, owner_team: int = 0):
         self.owner = owner              # Player 引用
         self.opponent = opponent        # Player 引用（手枪瞄准目标）
         self.defn = defn
         self.owner_id = owner.char.id
+        self.owner_team = owner_team
         self.age = 0.0
         self.x = owner.x
         self.y = owner.y
@@ -1052,7 +1057,7 @@ class Weapon:
             return None
         if self.defn.weapon_type in (WeaponType.PISTOL, WeaponType.SNIPER):
             tx, ty = self._get_aim_target()
-            return Bullet(self.x, self.y, tx, ty, self.owner_id, self.defn)
+            return Bullet(self.x, self.y, tx, ty, self.owner_id, self.defn, owner_team=self.owner_team)
         elif self.defn.weapon_type == WeaponType.GATLING:
             tx, ty = self._get_aim_target()
             spread = self.defn.bullet_spread
@@ -1062,15 +1067,15 @@ class Weapon:
                 dist = math.hypot(ty - self.y, tx - self.x)
                 tx = self.x + math.cos(angle) * dist
                 ty = self.y + math.sin(angle) * dist
-            return Bullet(self.x, self.y, tx, ty, self.owner_id, self.defn)
+            return Bullet(self.x, self.y, tx, ty, self.owner_id, self.defn, owner_team=self.owner_team)
         elif self.defn.weapon_type == WeaponType.BOOMERANG:
-            b = BoomerangProjectile(self.x, self.y, self.owner, self.opponent, self.defn)
+            b = BoomerangProjectile(self.x, self.y, self.owner, self.opponent, self.defn, owner_team=self.owner_team)
             self._active_boomerang = b
             return b
         elif self.defn.weapon_type == WeaponType.HOMING:
             # 从发射筒口射出
             mx, my = self._get_launcher_muzzle()
-            m = HomingMissile(mx, my, self.owner, self.opponent, self.defn)
+            m = HomingMissile(mx, my, self.owner, self.opponent, self.defn, owner_team=self.owner_team)
             self._active_missile = m
             return m
         elif self.defn.weapon_type == WeaponType.SHURIKEN:
@@ -1085,7 +1090,7 @@ class Weapon:
                     d = math.hypot(ty - self.y, tx - self.x)
                     sx = self.x + math.cos(a) * d
                     sy = self.y + math.sin(a) * d
-                results.append(ShurikenProjectile(self.x, self.y, sx, sy, self.owner_id, self.defn))
+                results.append(ShurikenProjectile(self.x, self.y, sx, sy, self.owner_id, self.defn, owner_team=self.owner_team))
             return results
         elif self.defn.weapon_type == WeaponType.BOW:
             tx, ty = self._get_aim_target()
@@ -1096,11 +1101,11 @@ class Weapon:
                 a = base_angle + offset
                 sx = self.x + math.cos(a) * dist
                 sy = self.y + math.sin(a) * dist
-                results.append(Bullet(self.x, self.y, sx, sy, self.owner_id, self.defn))
+                results.append(Bullet(self.x, self.y, sx, sy, self.owner_id, self.defn, owner_team=self.owner_team))
             return results
         elif self.defn.weapon_type == WeaponType.CROSSBOW:
             tx, ty = self._get_aim_target()
-            return Bullet(self.x, self.y, tx, ty, self.owner_id, self.defn)
+            return Bullet(self.x, self.y, tx, ty, self.owner_id, self.defn, owner_team=self.owner_team)
         elif self.defn.weapon_type == WeaponType.KATANA:
             return None
         elif self.defn.weapon_type == WeaponType.HOLY_SWORD:
@@ -1120,6 +1125,7 @@ class Weapon:
                         speed=280,
                         length=25,
                         width=180,
+                        owner_team=self.owner_team,
                     ))
                 return results
             else:
@@ -1133,6 +1139,7 @@ class Weapon:
                     lifetime=3.5,
                     speed=230,
                     size=100,
+                    owner_team=self.owner_team,
                 )
         return None
 

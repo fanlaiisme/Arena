@@ -11,8 +11,10 @@ from venue import ARENA_CENTER, ARENA_RADIUS
 
 
 class PetMovement(Enum):
-    CHASE = "chase"  # 追踪目标
-    SPIDER = "spider"  # 蜘蛛织网
+    CHASE = "chase"       # 追踪目标
+    SPIDER = "spider"     # 蜘蛛织网
+    GHOST = "ghost"       # 幽灵追踪
+    SNOWMAN = "snowman"   # 雪人追踪
 
 
 @dataclass
@@ -89,8 +91,9 @@ class Pet:
     """一个宠物/召唤物实例，有独立HP、可被攻击。蛇形身体由多个跟随段组成。"""
 
     def __init__(self, x: float, y: float, owner_id: str,
-                 target, defn: PetDef):
+                 target, defn: PetDef, owner_team: int = 0):
         self.owner_id = owner_id
+        self.owner_team = owner_team
         self.target = target
         self.defn = defn
         self.age = 0.0
@@ -356,8 +359,9 @@ class SpiderPet:
     """蜘蛛宠物 —— 移动到竞技场边界，织网减速并伤害触碰网的敌人。"""
 
     def __init__(self, x: float, y: float, owner_id: str,
-                 target, defn: PetDef):
+                 target, defn: PetDef, owner_team: int = 0):
         self.owner_id = owner_id
+        self.owner_team = owner_team
         self.target = target
         self.defn = defn
         self.age = 0.0
@@ -554,7 +558,7 @@ class SpiderPet:
         """检查玩家是否碰到蜘蛛网。返回True表示发生了碰撞。"""
         if not player.alive:
             return False
-        if player.char.id == self.owner_id:
+        if player.team == self.owner_team:
             return False
         threshold = player.radius + 4
         for web in self.web_segments:
@@ -563,7 +567,7 @@ class SpiderPet:
                 web.x1, web.y1, web.x2, web.y2,
             )
             if dist < threshold:
-                dmg = self.defn.damage * 0.016  # ~5 DPS at 60fps
+                dmg = self.defn.damage / 60.0  # per-frame damage at 60fps (~5 DPS when damage=300)
                 player.take_damage(dmg)
                 if getattr(player, 'unstoppable_timer', 0) <= 0:
                     player.slow_mult = self._web_slow_mult()
@@ -575,7 +579,7 @@ class SpiderPet:
         """检查敌方宠物是否碰到蜘蛛网。"""
         if isinstance(pet, SpiderPet):
             return False  # 蜘蛛网不互相影响
-        if pet.owner_id == self.owner_id:
+        if pet.owner_team == self.owner_team:
             return False
         if isinstance(pet, Pet):
             head_x, head_y = pet.segments[0]
@@ -739,8 +743,9 @@ class SnowmanPet(Pet):
     """雪人宠物 —— 缓慢追踪敌人，碰到造成伤害。"""
 
     def __init__(self, x: float, y: float, owner_id: str,
-                 target, defn: PetDef):
+                 target, defn: PetDef, owner_team: int = 0):
         self.owner_id = owner_id
+        self.owner_team = owner_team
         self.target = target
         self.defn = defn
         self.age = 0.0
@@ -946,8 +951,9 @@ class SnowmanPet(Pet):
 class GhostPet:
     """幽灵宠物 —— 穿透一切障碍物和攻击，碰到敌人造成伤害+恐惧后消失。"""
 
-    def __init__(self, x: float, y: float, owner_id: str, target, defn: PetDef):
+    def __init__(self, x: float, y: float, owner_id: str, target, defn: PetDef, owner_team: int = 0):
         self.owner_id = owner_id
+        self.owner_team = owner_team
         self.target = target
         self.defn = defn
         self.age = 0.0

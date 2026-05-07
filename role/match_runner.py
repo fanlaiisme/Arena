@@ -19,24 +19,25 @@ from main import Game, CHARACTERS, FPS
 TIMEOUT_FRAMES = 7200  # 120s 等效帧数（60fps）
 
 
-def run_headless_match(p1_char_id: str, p2_char_id: str) -> dict:
+def run_headless_match(char_ids: list[str]) -> dict:
     """运行一场头渲染对局，返回比赛结果。
 
     Args:
-        p1_char_id: 玩家1 的角色 id（对应 CharacterTemplate.id）
-        p2_char_id: 玩家2 的角色 id
+        char_ids: 角色 id 列表（2个=1v1, 4个=2v2）
 
     Returns:
-        dict with keys: winner, loser, winner_final_hp, loser_final_hp,
-                        duration_frames, p1_char, p2_char
+        dict with keys: winner, mode, duration_frames, char_ids
         超时时 winner 为 None。
     """
+    if len(char_ids) not in (2, 4):
+        raise ValueError(f"char_ids must have 2 or 4 elements, got {len(char_ids)}")
+
     # 找到角色索引
-    p1_idx = next(i for i, c in enumerate(CHARACTERS) if c.id == p1_char_id)
-    p2_idx = next(i for i, c in enumerate(CHARACTERS) if c.id == p2_char_id)
+    indices = [next(i for i, c in enumerate(CHARACTERS) if c.id == cid) for cid in char_ids]
 
     game = Game()
-    game.selection = [p1_idx, p2_idx]
+    game.mode = "1v1" if len(char_ids) == 2 else "2v2"
+    game.selection = indices
     game.start_match()
     dt = 1.0 / FPS
 
@@ -50,27 +51,16 @@ def run_headless_match(p1_char_id: str, p2_char_id: str) -> dict:
             return {
                 "winner": None,
                 "reason": "timeout",
-                "frames": frame,
-                "p1_char": p1_char_id,
-                "p2_char": p2_char_id,
+                "duration_frames": frame,
+                "mode": game.mode,
+                "char_ids": char_ids,
             }
-
-    winner_char = game.winner
-    loser_char = (game.player1.char.name if winner_char == game.player2.char.name
-                  else game.player2.char.name)
-    winner_hp = (game.player1.hp if winner_char == game.player1.char.name
-                 else game.player2.hp)
-    loser_hp = (game.player2.hp if winner_char == game.player1.char.name
-                else game.player1.hp)
 
     game.logger.close()
 
     return {
-        "winner": winner_char,
-        "loser": loser_char,
-        "winner_final_hp": winner_hp,
-        "loser_final_hp": loser_hp,
+        "winner": game.winner,
+        "mode": game.mode,
         "duration_frames": frame,
-        "p1_char": p1_char_id,
-        "p2_char": p2_char_id,
+        "char_ids": char_ids,
     }

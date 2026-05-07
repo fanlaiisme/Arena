@@ -11,7 +11,7 @@ ORC_FIST_SPAWN_DIST = 140  # 兽人双拳在扇形内的释放距离（px）
 from lightning import LightningBolt, LightningTrapBolt
 from pet import Pet, SpiderPet, SnowmanPet, GhostPet, PetMovement
 from weapon import Weapon, WeaponType, Bullet, HomingMissile, WeaponPickup, ShurikenProjectile
-from bomb import Bomb, BombDef, GasCloud
+from bomb import Bomb, BombDef, BombType, GasCloud
 from venue import Arena
 from logger import MatchLogger
 
@@ -33,9 +33,10 @@ SELECT_BG = (20, 20, 30)
 
 # ── Player ───────────────────────────────────────────────────────────────────
 class Player:
-    def __init__(self, x, y, char: CharacterTemplate):
+    def __init__(self, x, y, char: CharacterTemplate, team: int = 0):
         self.x = float(x)
         self.y = float(y)
+        self.team = team
         self.vx = random.uniform(-1.5, 1.5)
         self.vy = random.uniform(-1.5, 1.5)
         self.char = char
@@ -222,10 +223,11 @@ class Player:
             if segment:
                 arena.apply_effect(self, segment)
 
-        # Record trail point
-        self.trail_points.append((self.x, self.y))
-        if len(self.trail_points) > self.max_trail_length:
-            self.trail_points.pop(0)
+        # Record trail point (only for characters with trail_enabled)
+        if self.char.trail_enabled:
+            self.trail_points.append((self.x, self.y))
+            if len(self.trail_points) > self.max_trail_length:
+                self.trail_points.pop(0)
 
     def draw(self, screen, font_small):
         # Fire effect (burning)
@@ -429,11 +431,11 @@ class Game:
         self.font_title = pygame.font.SysFont("WenQuanYi Micro Hei", 40, bold=True)
         self.running = True
 
-        # State machine: "select_p1" | "select_p2" | "fighting" | "game_over"
-        self.state = "select_p1"
-        self.selection = [None, None]  # selected character indices for p1, p2
-        self.player1 = None
-        self.player2 = None
+        # State machine: "mode_select" | "select_p1" | "select_p2" | "select_p3" | "select_p4" | "fighting" | "game_over"
+        self.mode = None  # "1v1" or "2v2"
+        self.state = "mode_select"
+        self.selection = []  # dynamic length: 1v1=2, 2v2=4
+        self.players: list[Player] = []  # replaces player1/player2
         self.projectiles: list[Projectile] = []
         self.lightning_bolts: list[LightningBolt] = []
         self.lightning_traps: list[LightningTrapBolt] = []
@@ -460,6 +462,92 @@ class Game:
         self.game_over = False
         self.winner = None
         self.logger = MatchLogger("output")
+
+    # ── Team helpers ─────────────────────────────────────────────────────────
+    def get_opponents(self, player: Player) -> list[Player]:
+        """Return all alive players on the opposing team."""
+        return [p for p in self.players if p.alive and p.team != player.team]
+
+    def get_teammate(self, player: Player) -> Player | None:
+        """Return the other player on the same team (2v2 only)."""
+        for p in self.players:
+            if p is not player and p.team == player.team:
+                return p
+        return None
+
+    def _pick_opponent(self, player: Player) -> Player | None:
+        """Pick one opponent: 1v1 returns the only opponent, 2v2 returns the nearest alive opponent."""
+        opponents = self.get_opponents(player)
+        if not opponents:
+            return None
+        if len(opponents) == 1:
+            return opponents[0]
+        # 2v2: return nearest
+        return min(opponents, key=lambda p: math.hypot(p.x - player.x, p.y - player.y))
+
+    def _pick_slowest_opponent(self, player: Player) -> Player | None:
+        """2v2 berserker hunt mark: return the alive opponent with the lowest char.speed."""
+        opponents = self.get_opponents(player)
+        if not opponents:
+            return None
+        return min(opponents, key=lambda p: p.char.speed)
+
+    # ── Mode selection screen ────────────────────────────────────────────────
+    def handle_mode_input(self, event):
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            self.running = False
+            return
+
+        if event.type != pygame.MOUSEBUTTONDOWN or event.button != 1:
+            return
+
+        mx, my = event.pos
+        btn_w, btn_h = 200, 100
+        gap = 40
+        total_w = btn_w * 2 + gap
+        start_x = CENTER[0] - total_w // 2
+        start_y = CENTER[1] - btn_h // 2
+
+        rect_1v1 = pygame.Rect(start_x, start_y, btn_w, btn_h)
+        rect_2v2 = pygame.Rect(start_x + btn_w + gap, start_y, btn_w, btn_h)
+
+        if rect_1v1.collidepoint(mx, my):
+            self.mode = "1v1"
+            self.selection = [None, None]
+            self.state = "select_p1"
+        elif rect_2v2.collidepoint(mx, my):
+            self.mode = "2v2"
+            self.selection = [None, None, None, None]
+            self.state = "select_p1"
+
+    def draw_mode_select(self):
+        self.screen.fill(SELECT_BG)
+
+        title = self.font_title.render("角斗场 — 选择模式", True, TEXT_COLOR)
+        self.screen.blit(title, (CENTER[0] - title.get_width() // 2, 80))
+
+        btn_w, btn_h = 200, 100
+        gap = 40
+        total_w = btn_w * 2 + gap
+        start_x = CENTER[0] - total_w // 2
+        start_y = CENTER[1] - btn_h // 2
+
+        mx, my = pygame.mouse.get_pos()
+
+        for idx, (label, x) in enumerate([("1v1", start_x), ("2v2", start_x + btn_w + gap)]):
+            rect = pygame.Rect(x, start_y, btn_w, btn_h)
+            hovered = rect.collidepoint(mx, my)
+            bg_color = (60, 60, 80) if hovered else (40, 40, 55)
+            border_color = (180, 180, 200) if hovered else (80, 80, 100)
+            pygame.draw.rect(self.screen, bg_color, rect, border_radius=12)
+            pygame.draw.rect(self.screen, border_color, rect, 3, border_radius=12)
+
+            label_surf = self.font_large.render(label, True, TEXT_COLOR)
+            self.screen.blit(label_surf, (x + btn_w // 2 - label_surf.get_width() // 2,
+                                          start_y + btn_h // 2 - label_surf.get_height() // 2))
+
+        hint = self.font_small.render("点击选择模式  / 按 ESC 退出", True, (140, 140, 150))
+        self.screen.blit(hint, (CENTER[0] - hint.get_width() // 2, start_y + btn_h + 40))
 
     # ── Selection screen ─────────────────────────────────────────────────────
     def handle_selection_input(self, event):
@@ -493,26 +581,51 @@ class Game:
                     if i == self.selection[0]:
                         return
                     self.selection[1] = i
+                    if self.mode == "1v1":
+                        self.start_match()
+                    else:
+                        self.state = "select_p3"
+                elif self.state == "select_p3":
+                    # 2v2: teammate cannot pick same character as teammate (index 0 or 1)
+                    if i in (self.selection[0], self.selection[1]):
+                        return
+                    self.selection[2] = i
+                    self.state = "select_p4"
+                elif self.state == "select_p4":
+                    # Cannot pick same as any teammate (indices 0, 1, 2)
+                    if i in (self.selection[0], self.selection[1], self.selection[2]):
+                        return
+                    self.selection[3] = i
                     self.start_match()
                 return
 
     def draw_selection_screen(self):
         self.screen.fill(SELECT_BG)
 
-        # Title
-        title = self.font_title.render("角斗场 — 选择出战角色", True, TEXT_COLOR)
+        # Title with mode
+        mode_label = "1v1" if self.mode == "1v1" else "2v2"
+        title = self.font_title.render(f"角斗场 [{mode_label}] — 选择出战角色", True, TEXT_COLOR)
         self.screen.blit(title, (CENTER[0] - title.get_width() // 2, 18))
 
         # Prompt
+        state_idx = {"select_p1": 0, "select_p2": 1, "select_p3": 2, "select_p4": 3}
+        cur_idx = state_idx.get(self.state, 0)
+        team_names = ["左方 (A队)", "右方 (B队)", "左方 (A队)", "右方 (B队)"]
+        team_label = team_names[cur_idx] if cur_idx < len(team_names) else ""
+
         if self.state == "select_p1":
-            prompt_text = "鼠标点击选择 左方 角色"
+            prompt_text = f"鼠标点击选择 {team_label} 角色"
         else:
-            c = CHARACTERS[self.selection[0]]
-            prompt_text = f"已选左方: {c.name}  —  鼠标点击选择 右方 角色（不可重复）"
+            selected_names = []
+            for idx in range(cur_idx):
+                if idx < len(self.selection) and self.selection[idx] is not None:
+                    selected_names.append(CHARACTERS[self.selection[idx]].name)
+            selected_str = ", ".join(selected_names)
+            prompt_text = f"已选: {selected_str}  —  鼠标点击选择 {team_label} 角色"
         prompt = self.font.render(prompt_text, True, (180, 180, 180))
         self.screen.blit(prompt, (CENTER[0] - prompt.get_width() // 2, 72))
 
-        # Character grid — 5 cols × 4 rows
+        # Character grid — 5 cols × up to 5 rows
         cols = 5
         card_w, card_h = 130, 80
         gap_x, gap_y = 10, 10
@@ -522,6 +635,21 @@ class Game:
 
         mx, my = pygame.mouse.get_pos()
 
+        # Determine which indices are already selected by a teammate
+        # 2v2: team A = indices 0,2; team B = indices 1,3
+        if self.mode == "2v2":
+            if self.state in ("select_p3",):
+                teammate_indices = {self.selection[0], self.selection[1]}
+            elif self.state in ("select_p4",):
+                teammate_indices = {self.selection[0], self.selection[1], self.selection[2]}
+            else:
+                teammate_indices = set()
+        else:
+            if self.state == "select_p2":
+                teammate_indices = {self.selection[0]}
+            else:
+                teammate_indices = set()
+
         for i, char in enumerate(CHARACTERS):
             row = i // cols
             col = i % cols
@@ -529,13 +657,11 @@ class Game:
             cy = start_y + row * (card_h + gap_y)
             rect = pygame.Rect(cx, cy, card_w, card_h)
 
-            # Determine card appearance
-            is_selected_p1 = self.selection[0] == i
-            is_selected_p2 = self.selection[1] == i
+            is_selected = i in (s for s in self.selection if s is not None)
             is_hovered = rect.collidepoint(mx, my)
-            is_disabled = self.state == "select_p2" and self.selection[0] == i
+            is_disabled = i in teammate_indices
 
-            if is_selected_p1 or is_selected_p2:
+            if is_selected:
                 border_color = (255, 215, 0)
                 bg_color = (50, 50, 60)
             elif is_disabled:
@@ -568,32 +694,38 @@ class Game:
 
     # ── Match start ──────────────────────────────────────────────────────────
     def start_match(self):
-        p1_char = CHARACTERS[self.selection[0]]
-        p2_char = CHARACTERS[self.selection[1]]
-        self.player1 = Player(CENTER[0] - 100, CENTER[1], p1_char)
-        self.player2 = Player(CENTER[0] + 100, CENTER[1], p2_char)
+        if self.mode == "1v1":
+            p1_char = CHARACTERS[self.selection[0]]
+            p2_char = CHARACTERS[self.selection[1]]
+            self.players = [
+                Player(CENTER[0] - 100, CENTER[1], p1_char, team=0),
+                Player(CENTER[0] + 100, CENTER[1], p2_char, team=1),
+            ]
+        else:  # 2v2
+            p1_char = CHARACTERS[self.selection[0]]
+            p2_char = CHARACTERS[self.selection[1]]
+            p3_char = CHARACTERS[self.selection[2]]
+            p4_char = CHARACTERS[self.selection[3]]
+            self.players = [
+                Player(CENTER[0] - 100, CENTER[1] - 60, p1_char, team=0),
+                Player(CENTER[0] + 100, CENTER[1] - 60, p2_char, team=1),
+                Player(CENTER[0] - 100, CENTER[1] + 60, p3_char, team=0),
+                Player(CENTER[0] + 100, CENTER[1] + 60, p4_char, team=1),
+            ]
 
-        # Give initial staggered cooldown so they don't fire at the same instant
-        if p1_char.skill is not None:
-            self.player1.skill_timer = random.uniform(0, p1_char.skill.cooldown * 0.5)
-        if p1_char.lightning_skill is not None:
-            self.player1.lightning_timer = random.uniform(0, p1_char.lightning_skill.cooldown * 0.5)
-        if p2_char.skill is not None:
-            self.player2.skill_timer = random.uniform(0, p2_char.skill.cooldown * 0.5)
-        if p2_char.lightning_skill is not None:
-            self.player2.lightning_timer = random.uniform(0, p2_char.lightning_skill.cooldown * 0.5)
-        if p1_char.pet_skill is not None:
-            self.player1.pet_timer = random.uniform(0, p1_char.pet_skill.cooldown * 0.5)
-        if p2_char.pet_skill is not None:
-            self.player2.pet_timer = random.uniform(0, p2_char.pet_skill.cooldown * 0.5)
-        if p1_char.bomb_skill is not None:
-            self.player1.bomb_timer = random.uniform(0, p1_char.bomb_skill.cooldown * 0.5)
-        if p2_char.bomb_skill is not None:
-            self.player2.bomb_timer = random.uniform(0, p2_char.bomb_skill.cooldown * 0.5)
-        if p1_char.bomb_skill2 is not None:
-            self.player1.bomb_timer2 = random.uniform(0, p1_char.bomb_skill2.cooldown * 0.5)
-        if p2_char.bomb_skill2 is not None:
-            self.player2.bomb_timer2 = random.uniform(0, p2_char.bomb_skill2.cooldown * 0.5)
+        # Give initial staggered cooldown
+        for player in self.players:
+            p_char = player.char
+            if p_char.skill is not None:
+                player.skill_timer = random.uniform(0, p_char.skill.cooldown * 0.5)
+            if p_char.lightning_skill is not None:
+                player.lightning_timer = random.uniform(0, p_char.lightning_skill.cooldown * 0.5)
+            if p_char.pet_skill is not None:
+                player.pet_timer = random.uniform(0, p_char.pet_skill.cooldown * 0.5)
+            if p_char.bomb_skill is not None:
+                player.bomb_timer = random.uniform(0, p_char.bomb_skill.cooldown * 0.5)
+            if p_char.bomb_skill2 is not None:
+                player.bomb_timer2 = random.uniform(0, p_char.bomb_skill2.cooldown * 0.5)
 
         self.projectiles = []
         self.lightning_bolts = []
@@ -615,19 +747,17 @@ class Game:
         self._pickup_spawn_timer = random.uniform(3.0, 6.0)
 
         # Spawn persistent weapons immediately
-        if p1_char.weapon_skill is not None:
-            self.weapons.append(Weapon(self.player1, self.player2, p1_char.weapon_skill))
-        if p1_char.weapon_skill2 is not None:
-            self.weapons.append(Weapon(self.player1, self.player2, p1_char.weapon_skill2))
-        if p2_char.weapon_skill is not None:
-            self.weapons.append(Weapon(self.player2, self.player1, p2_char.weapon_skill))
-        if p2_char.weapon_skill2 is not None:
-            self.weapons.append(Weapon(self.player2, self.player1, p2_char.weapon_skill2))
+        for player in self.players:
+            opponent = self._pick_opponent(player)
+            if player.char.weapon_skill is not None:
+                self.weapons.append(Weapon(player, opponent, player.char.weapon_skill, owner_team=player.team))
+            if player.char.weapon_skill2 is not None:
+                self.weapons.append(Weapon(player, opponent, player.char.weapon_skill2, owner_team=player.team))
 
         self.game_over = False
         self.winner = None
         self.state = "fighting"
-        self.logger.start_match(p1_char, p2_char)
+        self.logger.start_match(self.players, self.mode)
 
     # ── Skill spawning ───────────────────────────────────────────────────────
     def try_use_skill(self, player: Player):
@@ -638,8 +768,8 @@ class Game:
             return
         # 兽人每帧更新扇形朝向（不受冷却限制）
         if player.char.id == "orc" and skill.name == "双拳":
-            opponent = self.player1 if player is self.player2 else self.player2
-            if opponent.alive:
+            opponent = self._pick_opponent(player)
+            if opponent and opponent.alive:
                 player._cone_facing = math.atan2(opponent.y - player.y, opponent.x - player.x)
         if player.skill_timer >= skill.cooldown:
             player.skill_timer = 0.0
@@ -649,7 +779,7 @@ class Game:
                 r = random.uniform(30, ARENA_RADIUS - 130)
                 vx = CENTER[0] + math.cos(angle) * r
                 vy = CENTER[1] + math.sin(angle) * r
-                self.vortexes.append(VortexEntity(vx, vy, player.char.id, skill))
+                self.vortexes.append(VortexEntity(vx, vy, player.char.id, skill, owner_team=player.team))
                 return
             # 森林精灵的生命之树（最多3棵，在精灵与圆心中点生成）
             if player.char.id == "elf" and skill.name == "生命之树":
@@ -658,7 +788,7 @@ class Game:
                     return
                 tx = (player.x + CENTER[0]) / 2
                 ty = (player.y + CENTER[1]) / 2
-                self.trees.append(TreeEntity(tx, ty, player.char.id))
+                self.trees.append(TreeEntity(tx, ty, player.char.id, owner_team=player.team))
                 return
             # 暗夜猎手的隐身技能
             if player.char.id == "hunter" and skill.name == "隐身":
@@ -667,13 +797,13 @@ class Game:
                 return
             # 武僧的金掌技能（敌方玩家或宠物在圆形范围内触发）
             if player.char.id == "monk" and skill.name == "金掌":
-                opponent = self.player1 if player is self.player2 else self.player2
+                opponent = self._pick_opponent(player)
                 target_x, target_y = None, None
-                if opponent.alive and math.hypot(opponent.x - player.x, opponent.y - player.y) <= 100:
+                if opponent and opponent.alive and math.hypot(opponent.x - player.x, opponent.y - player.y) <= 100:
                     target_x, target_y = opponent.x, opponent.y
                 else:
                     for pet in self.pets:
-                        if pet.owner_id == player.char.id:
+                        if pet.owner_team == player.team:
                             continue
                         px, py = self._get_pet_head(pet)
                         if math.hypot(px - player.x, py - player.y) <= 100:
@@ -681,15 +811,15 @@ class Game:
                             break
                 if target_x is None:
                     return
-                self.palms.append(GoldenPalm(target_x, target_y, player.char.id, skill))
+                self.palms.append(GoldenPalm(target_x, target_y, player.char.id, skill, owner_team=player.team))
                 return
             # 兽人的双拳技能（敌人在面前锥形内触发，冷却就绪后等待敌人进范围）
             if player.char.id == "orc" and skill.name == "双拳":
                 facing = player._cone_facing
                 # 检查敌方玩家
-                opponent = self.player1 if player is self.player2 else self.player2
+                opponent = self._pick_opponent(player)
                 target_in_cone = False
-                if opponent.alive:
+                if opponent and opponent.alive:
                     dx = opponent.x - player.x
                     dy = opponent.y - player.y
                     dist = math.hypot(dx, dy)
@@ -700,7 +830,7 @@ class Game:
                 # 检查敌方宠物
                 if not target_in_cone:
                     for pet in self.pets:
-                        if pet.owner_id == player.char.id:
+                        if pet.owner_team == player.team:
                             continue
                         px, py = self._get_pet_head(pet)
                         dx = px - player.x
@@ -722,7 +852,7 @@ class Game:
                 ly = player.y + math.sin(la) * dist
                 rx = player.x + math.cos(ra) * dist
                 ry = player.y + math.sin(ra) * dist
-                self.fist_traps.append(FistTrap(lx, ly, rx, ry, player.char.id, skill, facing))
+                self.fist_traps.append(FistTrap(lx, ly, rx, ry, player.char.id, skill, facing, owner_team=player.team))
                 player._fist_saved_vx = player.vx
                 player._fist_saved_vy = player.vy
                 player.fist_release_timer = skill.lifetime
@@ -738,7 +868,7 @@ class Game:
                     if old.owner_id == player.char.id:
                         self._restore_tracking_targets(old)
                 self.clones = [c for c in self.clones if c.owner_id != player.char.id]
-                clone = ShadowClone(player, player.x, player.y, skill)
+                clone = ShadowClone(player, player.x, player.y, skill, owner_team=player.team)
                 self.clones.append(clone)
                 # 所有追踪实体重定向到分身
                 self._redirect_tracking_to_clone(clone)
@@ -760,7 +890,7 @@ class Game:
             px = player.x + math.cos(angle) * offset
             py = player.y + math.sin(angle) * offset
             self.projectiles.append(
-                Projectile(px, py, player.char.id, skill, owner=player)
+                Projectile(px, py, player.char.id, skill, owner=player, owner_team=player.team)
             )
 
     # ── Second skill spawning ─────────────────────────────────────────────────
@@ -793,27 +923,36 @@ class Game:
                 player.golden_body_timer = skill.lifetime
             # 潮汐使者的波纹（连续3波）
             if skill.name == "波纹":
-                opponent = self.player1 if player is self.player2 else self.player2
+                opponent = self._pick_opponent(player)
+                if opponent is None:
+                    return
                 angle = math.atan2(opponent.y - player.y, opponent.x - player.x)
-                self.waves.append(WaveEntity(player.x, player.y, angle, player.char.id, skill))
+                self.waves.append(WaveEntity(player.x, player.y, angle, player.char.id, skill, owner_team=player.team))
                 self._wave_burst_timer = 0.5
                 self._wave_burst_remaining = 2
                 self._wave_owner = player
                 player.skill2_timer = 0.0  # 波次开始后重置冷却
             # 森林精灵的叶刃风暴（4片叶子环绕）
             if skill.name == "叶刃风暴":
-                opponent = self.player1 if player is self.player2 else self.player2
+                opponent = self._pick_opponent(player)
+                if opponent is None:
+                    return
                 for i in range(4):
                     angle = i * math.pi / 2
                     self.leaf_blades.append(
-                        LeafBlade(player, opponent, angle, skill, i))
+                        LeafBlade(player, opponent, angle, skill, i, owner_team=player.team))
                 return
 
     # ── HuntMark helper ─────────────────────────────────────────────────────────
 
     def _trigger_hunt_mark(self, player: Player, speed: float):
         """狂战士猎杀印记：保存速度、冻结玩家、在敌人位置生成印记。"""
-        opponent = self.player1 if player is self.player2 else self.player2
+        if self.mode == "2v2":
+            opponent = self._pick_slowest_opponent(player)
+        else:
+            opponent = self._pick_opponent(player)
+        if opponent is None:
+            return
 
         player._hunt_saved_vx = player.vx
         player._hunt_saved_vy = player.vy
@@ -833,7 +972,7 @@ class Game:
 
         self.hunt_marks.append(
             HuntMark(tx, ty, player.char.id, player.char.skill2,
-                     saved_speed=speed, saved_angle=angle)
+                     saved_speed=speed, saved_angle=angle, owner_team=player.team)
         )
 
     def _apply_hunt_mark_damage(self, hm: HuntMark):
@@ -842,8 +981,8 @@ class Game:
         EDGE_MULT = 1.8
         min_ratio = EDGE_MULT / CENTER_MULT  # 0.72
 
-        for player in (self.player1, self.player2):
-            if not player.alive or player.char.id == hm.owner_id:
+        for player in self.players:
+            if not player.alive or player.team == hm.owner_team:
                 continue
             dist = math.hypot(player.x - hm.x, player.y - hm.y)
             if dist < hm.radius + player.radius:
@@ -855,7 +994,7 @@ class Game:
         for pet in self.pets:
             if isinstance(pet, GhostPet):
                 continue
-            if pet.owner_id == hm.owner_id:
+            if pet.owner_team == hm.owner_team:
                 continue
             px, py = self._get_pet_head(pet)
             dist = math.hypot(px - hm.x, py - hm.y)
@@ -886,7 +1025,7 @@ class Game:
             angles = [random.uniform(0, 2 * math.pi) for _ in range(ldef.bolt_count)]
             for angle in angles:
                 self.lightning_bolts.append(
-                    LightningBolt(player.x, player.y, angle, player.char.id, ldef)
+                    LightningBolt(player.x, player.y, angle, player.char.id, ldef, owner_team=player.team)
                 )
             # Apply self-debuffs during release（霸体免疫自减速）
             if player.unstoppable_timer <= 0:
@@ -911,7 +1050,7 @@ class Game:
             angles = [random.uniform(0, 2 * math.pi) for _ in range(tdef.bolt_count)]
             for angle in angles:
                 self.lightning_traps.append(
-                    LightningTrapBolt(player.x, player.y, angle, player.char.id, tdef)
+                    LightningTrapBolt(player.x, player.y, angle, player.char.id, tdef, owner_team=player.team)
                 )
 
     # ── Pet spawning ─────────────────────────────────────────────────────────
@@ -924,20 +1063,20 @@ class Game:
         if player.pet_timer >= pdef.cooldown:
             player.pet_timer = 0.0
             # Find opponent as target
-            opponent = (self.player2 if player is self.player1 else self.player1)
+            opponent = self._pick_opponent(player)
             if opponent is not None and opponent.alive:
                 target = opponent
             else:
                 target = None
             if pdef.movement_type == PetMovement.SPIDER:
                 self.pets.append(
-                    SpiderPet(player.x, player.y, player.char.id, target, pdef)
+                    SpiderPet(player.x, player.y, player.char.id, target, pdef, owner_team=player.team)
                 )
-            elif pdef.name == "幽灵":
+            elif pdef.movement_type == PetMovement.GHOST:
                 self.pets.append(
-                    GhostPet(player.x, player.y, player.char.id, target, pdef)
+                    GhostPet(player.x, player.y, player.char.id, target, pdef, owner_team=player.team)
                 )
-            elif pdef.movement_type == PetMovement.CHASE and pdef.body_length == 0:
+            elif pdef.movement_type == PetMovement.SNOWMAN:
                 # Snowman pet — enforce max 6 per owner
                 owned_snowmen = [p for p in self.pets
                                  if isinstance(p, SnowmanPet) and p.owner_id == player.char.id]
@@ -945,20 +1084,20 @@ class Game:
                     oldest = min(owned_snowmen, key=lambda p: p.age)
                     oldest.hp = 0  # melt the oldest
                 self.pets.append(
-                    SnowmanPet(player.x, player.y, player.char.id, target, pdef)
+                    SnowmanPet(player.x, player.y, player.char.id, target, pdef, owner_team=player.team)
                 )
             else:
                 self.pets.append(
-                    Pet(player.x, player.y, player.char.id, target, pdef)
+                    Pet(player.x, player.y, player.char.id, target, pdef, owner_team=player.team)
                 )
 
     # ── Bomb spawning ──────────────────────────────────────────────────────
 
     def _throw_bomb(self, player: Player, bdef: BombDef):
         """执行投掷炸弹（方向、距离计算 + arena 边界钳制）。"""
-        opponent = self.player1 if player is self.player2 else self.player2
+        opponent = self._pick_opponent(player)
         # 对手隐身/死亡时随机投掷
-        if opponent.alive and not getattr(opponent, 'invisible', False):
+        if opponent and opponent.alive and not getattr(opponent, 'invisible', False):
             dx = opponent.x - player.x
             dy = opponent.y - player.y
             dist = math.hypot(dx, dy)
@@ -990,7 +1129,7 @@ class Game:
                 target_y = CENTER[1] + arena_dy / arena_dist * limit
 
         self.bombs.append(
-            Bomb(player.x, player.y, target_x, target_y, player.char.id, bdef)
+            Bomb(player.x, player.y, target_x, target_y, player.char.id, bdef, owner_team=player.team)
         )
 
     def try_use_bomb(self, player: Player):
@@ -1011,38 +1150,35 @@ class Game:
 
     # ── Player-to-player collision ──────────────────────────────────────────
     def resolve_player_collision(self):
-        p1 = self.player1
-        p2 = self.player2
-        if not (p1.alive and p2.alive):
-            return
+        """Player-to-player collision: only between different teams."""
+        alive = [p for p in self.players if p.alive]
+        for i, p1 in enumerate(alive):
+            for p2 in alive[i + 1:]:
+                if p1.team == p2.team:
+                    continue  # teammates don't collide
+                dx = p1.x - p2.x
+                dy = p1.y - p2.y
+                dist = math.hypot(dx, dy)
+                min_dist = p1.radius + p2.radius
 
-        dx = p1.x - p2.x
-        dy = p1.y - p2.y
-        dist = math.hypot(dx, dy)
-        min_dist = p1.radius + p2.radius
+                if dist < min_dist and dist > 0.001:
+                    nx = dx / dist
+                    ny = dy / dist
+                    overlap = min_dist - dist
+                    p1.x += nx * overlap / 2
+                    p1.y += ny * overlap / 2
+                    p2.x -= nx * overlap / 2
+                    p2.y -= ny * overlap / 2
 
-        if dist < min_dist and dist > 0.001:
-            # Normal vector from p2 to p1
-            nx = dx / dist
-            ny = dy / dist
+                    dvx = p1.vx - p2.vx
+                    dvy = p1.vy - p2.vy
+                    dv_dot_n = dvx * nx + dvy * ny
 
-            # Separate players so they just touch
-            overlap = min_dist - dist
-            p1.x += nx * overlap / 2
-            p1.y += ny * overlap / 2
-            p2.x -= nx * overlap / 2
-            p2.y -= ny * overlap / 2
-
-            # Reflect velocities along collision normal (elastic collision)
-            dvx = p1.vx - p2.vx
-            dvy = p1.vy - p2.vy
-            dv_dot_n = dvx * nx + dvy * ny
-
-            if dv_dot_n < 0:  # moving toward each other
-                p1.vx -= dv_dot_n * nx
-                p1.vy -= dv_dot_n * ny
-                p2.vx += dv_dot_n * nx
-                p2.vy += dv_dot_n * ny
+                    if dv_dot_n < 0:
+                        p1.vx -= dv_dot_n * nx
+                        p1.vy -= dv_dot_n * ny
+                        p2.vx += dv_dot_n * nx
+                        p2.vy += dv_dot_n * ny
 
     # ── Projectile collision detection ───────────────────────────────────────
 
@@ -1079,20 +1215,13 @@ class Game:
             # 穿透型剑气由 check_beam_collisions 单独处理
             if isinstance(proj, (CrescentBeam, VerticalBeam)):
                 continue
-            # Player 1 takes damage from player 2's projectiles
-            if (proj.owner_id != self.player1.char.id
-                    and proj.collides_with(self.player1)
-                    and self.player1.alive):
-                self.player1.take_damage(proj.skill.damage)
-                self._apply_burn(self.player1, proj)
-                proj._hit = True
-            # Player 2 takes damage from player 1's projectiles
-            if (proj.owner_id != self.player2.char.id
-                    and proj.collides_with(self.player2)
-                    and self.player2.alive):
-                self.player2.take_damage(proj.skill.damage)
-                self._apply_burn(self.player2, proj)
-                proj._hit = True
+            for player in self.players:
+                if (proj.owner_team != player.team
+                        and proj.collides_with(player)
+                        and player.alive):
+                    player.take_damage(proj.skill.damage)
+                    self._apply_burn(player, proj)
+                    proj._hit = True
 
     def _apply_burn(self, player, proj):
         """If the projectile has burn effect, apply it to the player."""
@@ -1106,12 +1235,10 @@ class Game:
         for proj in self.projectiles:
             if not isinstance(proj, (CrescentBeam, VerticalBeam)):
                 continue
-            if proj.owner_id != self.player1.char.id and self.player1.alive:
-                if proj.collides_with(self.player1):
-                    self.player1.take_damage(proj.skill.damage)
-            if proj.owner_id != self.player2.char.id and self.player2.alive:
-                if proj.collides_with(self.player2):
-                    self.player2.take_damage(proj.skill.damage)
+            for player in self.players:
+                if proj.owner_team != player.team and player.alive:
+                    if proj.collides_with(player):
+                        player.take_damage(proj.skill.damage)
 
     # ── Trail collision detection ──────────────────────────────────────────
 
@@ -1130,37 +1257,39 @@ class Game:
     def check_trail_collisions(self):
         """Check if any player touches the opponent's movement trail."""
         threshold = PLAYER_RADIUS + 4  # 4px trail half-width
-        for player, other in [(self.player1, self.player2),
-                               (self.player2, self.player1)]:
-            if not (player.alive and other.alive):
+        for player in self.players:
+            if not player.alive:
                 continue
-            if not other.char.trail_enabled:
-                continue
-            trail = other.trail_points
-            if len(trail) < 2:
-                continue
-            # Check every 3rd segment for performance
-            for i in range(0, len(trail) - 1, 3):
-                dist = self._point_to_segment_dist(
-                    player.x, player.y,
-                    trail[i][0], trail[i][1],
-                    trail[i + 1][0], trail[i + 1][1])
-                if dist < threshold:
-                    if player.unstoppable_timer <= 0:
-                        player.vx *= 0.975
-                        player.vy *= 0.975
-                    player.take_damage(0.05)
-                    break
+            for other in self.players:
+                if other is player or other.team == player.team:
+                    continue
+                if not other.alive or not other.char.trail_enabled:
+                    continue
+                trail = other.trail_points
+                if len(trail) < 2:
+                    continue
+                # Check every 3rd segment for performance
+                for i in range(0, len(trail) - 1, 3):
+                    dist = self._point_to_segment_dist(
+                        player.x, player.y,
+                        trail[i][0], trail[i][1],
+                        trail[i + 1][0], trail[i + 1][1])
+                    if dist < threshold:
+                        if player.unstoppable_timer <= 0:
+                            player.vx *= 0.975
+                            player.vy *= 0.975
+                        player.take_damage(0.05)
+                        break
 
     # ── Lightning collision detection ──────────────────────────────────────
 
     def check_lightning_collisions(self):
         """Check if any player is touching an opponent's lightning bolt."""
         for bolt in self.lightning_bolts:
-            for player in (self.player1, self.player2):
+            for player in self.players:
                 if not player.alive:
                     continue
-                if bolt.owner_id == player.char.id:
+                if bolt.owner_team == player.team:
                     continue
                 if bolt.collides_with(player):
                     player.take_damage(bolt.defn.damage)
@@ -1172,10 +1301,10 @@ class Game:
     def check_pet_player_collisions(self):
         """Pet head touches opponent player → deal damage and expire."""
         for pet in self.pets:
-            for player in (self.player1, self.player2):
+            for player in self.players:
                 if not player.alive:
                     continue
-                if pet.owner_id == player.char.id:
+                if pet.owner_team == player.team:
                     continue
                 if pet.collides_with(player):
                     if isinstance(pet, GhostPet):
@@ -1199,7 +1328,7 @@ class Game:
             for pet_b in self.pets[i + 1:]:
                 if isinstance(pet_a, GhostPet) or isinstance(pet_b, GhostPet):
                     continue
-                if pet_a.owner_id == pet_b.owner_id:
+                if pet_a.owner_team == pet_b.owner_team:
                     continue
                 # Circle-circle collision between pet heads
                 ax, ay = self._get_pet_head(pet_a)
@@ -1228,7 +1357,7 @@ class Game:
             for pet in self.pets:
                 if isinstance(pet, GhostPet):
                     continue
-                if proj.owner_id == pet.owner_id:
+                if proj.owner_team == pet.owner_team:
                     continue
                 # 穿透型剑气：使用专用的碰撞检测
                 if isinstance(proj, (CrescentBeam, VerticalBeam)):
@@ -1275,7 +1404,7 @@ class Game:
             for pet in self.pets:
                 if isinstance(pet, GhostPet):
                     continue
-                if bolt.owner_id == pet.owner_id:
+                if bolt.owner_team == pet.owner_team:
                     continue
                 head_x, head_y = self._get_pet_head(pet)
                 if bolt.collides_with_point(head_x, head_y, self._get_pet_radius(pet)):
@@ -1286,10 +1415,10 @@ class Game:
     def check_lightning_trap_player_collisions(self):
         """TRAP状态的陷阱碰到敌方玩家 → apply shock + disappear."""
         for trap in self.lightning_traps:
-            for player in (self.player1, self.player2):
+            for player in self.players:
                 if not player.alive:
                     continue
-                if trap.owner_id == player.char.id:
+                if trap.owner_team == player.team:
                     continue
                 if trap.collides_with_player(player):
                     trap.apply_shock(player)
@@ -1300,7 +1429,7 @@ class Game:
             for pet in self.pets:
                 if isinstance(pet, GhostPet):
                     continue
-                if trap.owner_id == pet.owner_id:
+                if trap.owner_team == pet.owner_team:
                     continue
                 if trap.collides_with_pet(pet):
                     trap.apply_shock(pet)
@@ -1311,7 +1440,7 @@ class Game:
         for pet in self.pets:
             if isinstance(pet, GhostPet):
                 continue
-            for player in (self.player1, self.player2):
+            for player in self.players:
                 if not player.alive:
                     continue
                 if not player.char.trail_enabled:
@@ -1340,10 +1469,10 @@ class Game:
         for pet in self.pets:
             if not isinstance(pet, SpiderPet):
                 continue
-            for player in (self.player1, self.player2):
+            for player in self.players:
                 if not player.alive:
                     continue
-                if pet.owner_id == player.char.id:
+                if pet.owner_team == player.team:
                     continue
                 pet.check_web_player_collision(player)
 
@@ -1357,7 +1486,7 @@ class Game:
                     continue
                 if isinstance(other, GhostPet):
                     continue
-                if other.owner_id == spider.owner_id:
+                if other.owner_team == spider.owner_team:
                     continue
                 spider.check_web_pet_collision(other)
 
@@ -1365,10 +1494,10 @@ class Game:
     def check_weapon_collisions(self):
         """Melee weapons deal contact damage to the opposing player."""
         for weapon in self.weapons:
-            for player in (self.player1, self.player2):
+            for player in self.players:
                 if not player.alive:
                     continue
-                if weapon.owner_id == player.char.id:
+                if weapon.owner_team == player.team:
                     continue
                 if weapon.collides_with(player):
                     player.take_damage(weapon.defn.damage)
@@ -1482,7 +1611,7 @@ class Game:
         """投射物/宠物/武器/闪电击中树 → 树掉血（长方形碰撞）。"""
         for tree in self.trees:
             for proj in self.projectiles:
-                if getattr(proj, 'owner_id', None) == tree.owner_id:
+                if getattr(proj, 'owner_team', None) == tree.owner_team:
                     continue
                 pr = getattr(proj, 'radius', 5)
                 if tree.collides_with_point(proj.x, proj.y, pr):
@@ -1493,7 +1622,7 @@ class Game:
             for pet in self.pets:
                 if isinstance(pet, GhostPet):
                     continue
-                if pet.owner_id == tree.owner_id:
+                if pet.owner_team == tree.owner_team:
                     continue
                 px, py = self._get_pet_head(pet)
                 if tree.collides_with_point(px, py, self._get_pet_radius(pet)):
@@ -1502,7 +1631,7 @@ class Game:
                     if hit and hasattr(pet, 'segments') and pet.segments:
                         pet.segments[0] = (px + nx * overlap, py + ny * overlap)
             for weapon in self.weapons:
-                if weapon.owner_id == tree.owner_id:
+                if weapon.owner_team == tree.owner_team:
                     continue
                 wt = weapon.defn.weapon_type
                 if wt not in (WeaponType.SCYTHE, WeaponType.SHIELD, WeaponType.KATANA, WeaponType.DUAL_AXE, WeaponType.HOLY_SWORD):
@@ -1522,7 +1651,7 @@ class Game:
                     tree.take_damage(weapon.defn.damage)
                     tree._weapon_hit_times[wid] = tree.age
             for bolt in self.lightning_bolts:
-                if bolt.owner_id == tree.owner_id:
+                if bolt.owner_team == tree.owner_team:
                     continue
                 if bolt.collides_with_point(tree.x, tree.y, tree.radius):
                     tree.take_damage(bolt.defn.damage)
@@ -1533,7 +1662,7 @@ class Game:
             for pet in self.pets:
                 if isinstance(pet, GhostPet):
                     continue
-                if weapon.owner_id == pet.owner_id:
+                if weapon.owner_team == pet.owner_team:
                     continue
                 if weapon.collides_with_pet(pet):
                     pet.take_damage(weapon.defn.damage)
@@ -1541,10 +1670,10 @@ class Game:
     def check_shield_projectile_collisions(self):
         """盾牌格挡投射物：投射物碰到盾牌后被摧毁。"""
         for weapon in self.weapons:
-            if weapon.defn.weapon_type.value != "shield":
+            if weapon.defn.weapon_type != WeaponType.SHIELD:
                 continue
             for proj in self.projectiles:
-                if getattr(proj, 'owner_id', None) == weapon.owner_id:
+                if getattr(proj, 'owner_team', None) == weapon.owner_team:
                     continue
                 # 圆-圆碰撞：盾牌中心 vs 投射物
                 dx = weapon.x - proj.x
@@ -1559,17 +1688,17 @@ class Game:
 
     def check_pickup_collisions(self):
         for pickup in self.weapon_pickups[:]:
-            for player in (self.player1, self.player2):
+            for player in self.players:
                 if not player.alive:
                     continue
                 if player.char.id != "weaponmaster":
                     continue
                 if pickup.collides_with(player):
                     # 移除旧拾取武器
-                    self.weapons = [w for w in self.weapons if w.owner_id != player.char.id]
+                    self.weapons = [w for w in self.weapons if w.owner is not player]
                     # 创建新武器
-                    opponent = self.player1 if player is self.player2 else self.player2
-                    new_weapon = Weapon(player, opponent, pickup.defn)
+                    opponent = self._pick_opponent(player)
+                    new_weapon = Weapon(player, opponent, pickup.defn, owner_team=player.team)
                     self.weapons.append(new_weapon)
                     # 设置拾取状态
                     player.pickup_uses_left = 2
@@ -1582,12 +1711,12 @@ class Game:
 
     def check_katana_projectile_collisions(self):
         for weapon in self.weapons:
-            if weapon.defn.weapon_type.value not in ("katana", "holy_sword"):
+            if weapon.defn.weapon_type not in (WeaponType.KATANA, WeaponType.HOLY_SWORD):
                 continue
             if weapon._slash_state == "idle":
                 continue
             for proj in self.projectiles:
-                if getattr(proj, 'owner_id', None) == weapon.owner_id:
+                if getattr(proj, 'owner_team', None) == weapon.owner_team:
                     continue
                 # 不抵消炸弹
                 if hasattr(proj, 'state') and getattr(proj, 'defn', None) is not None:
@@ -1604,10 +1733,10 @@ class Game:
             if not proj._stuck:
                 continue
             # 伤害玩家
-            for player in (self.player1, self.player2):
+            for player in self.players:
                 if not player.alive:
                     continue
-                if player.char.id == proj.owner_id:
+                if player.team == proj.owner_team:
                     continue
                 if proj.collides_with(player):
                     dmg = proj.try_stuck_damage(player, id(player), dt)
@@ -1615,7 +1744,7 @@ class Game:
                         player.take_damage(dmg)
             # 伤害宠物
             for pet in self.pets:
-                if pet.owner_id == proj.owner_id:
+                if pet.owner_team == proj.owner_team:
                     continue
                 pet_x, pet_y = self._get_pet_head(pet)
                 pet_r = self._get_pet_radius(pet)
@@ -1630,42 +1759,38 @@ class Game:
 
     def check_bomb_explosions(self):
         for bomb in self.bombs:
-            if bomb.state != "EXPLODED" or bomb._explosion_processed:
+            if not bomb.explosion_ready:
                 continue
             bomb._explosion_processed = True
 
             # 伤害玩家
-            for player in (self.player1, self.player2):
+            for player in self.players:
                 if not player.alive:
                     continue
-                if player.char.id == bomb.owner_id:
+                if player.team == bomb.owner_team:
                     continue
                 dist = math.hypot(player.x - bomb.target_x,
                                   player.y - bomb.target_y)
                 eff_radius = bomb.defn.explosion_radius + player.radius
                 if dist < eff_radius:
-                    ratio = 1.0 - (1.0 - bomb.defn.min_damage_ratio) * (dist / bomb.defn.explosion_radius)
-                    ratio = max(bomb.defn.min_damage_ratio, min(1.0, ratio))
-                    player.take_damage(bomb.defn.damage * ratio)
+                    player.take_damage(bomb.defn.damage_at_distance(dist))
 
             # 伤害宠物
             for pet in self.pets:
                 if isinstance(pet, GhostPet):
                     continue
-                if pet.owner_id == bomb.owner_id:
+                if pet.owner_team == bomb.owner_team:
                     continue
                 pet_x, pet_y = self._get_pet_head(pet)
                 dist = math.hypot(pet_x - bomb.target_x,
                                   pet_y - bomb.target_y)
                 head_r = self._get_pet_radius(pet)
                 if dist < bomb.defn.explosion_radius + head_r:
-                    ratio = 1.0 - (1.0 - bomb.defn.min_damage_ratio) * (dist / bomb.defn.explosion_radius)
-                    ratio = max(bomb.defn.min_damage_ratio, min(1.0, ratio))
-                    pet.take_damage(bomb.defn.damage * ratio)
+                    pet.take_damage(bomb.defn.damage_at_distance(dist))
 
             # 摧毁投射物
             for proj in self.projectiles:
-                if getattr(proj, 'owner_id', None) == bomb.owner_id:
+                if getattr(proj, 'owner_team', None) == bomb.owner_team:
                     continue
                 proj_skill = getattr(proj, 'skill', None)
                 if proj_skill is not None:
@@ -1679,16 +1804,14 @@ class Game:
 
             # 伤害树
             for tree in self.trees:
-                if tree.owner_id == bomb.owner_id:
+                if tree.owner_team == bomb.owner_team:
                     continue
                 dist = math.hypot(tree.x - bomb.target_x, tree.y - bomb.target_y)
                 if dist < bomb.defn.explosion_radius + tree.radius:
-                    ratio = 1.0 - (1.0 - bomb.defn.min_damage_ratio) * (dist / bomb.defn.explosion_radius)
-                    ratio = max(bomb.defn.min_damage_ratio, min(1.0, ratio))
-                    tree.take_damage(bomb.defn.damage * ratio)
+                    tree.take_damage(bomb.defn.damage_at_distance(dist))
 
             # ── 集束炸弹：母弹爆炸后分裂子炸弹 ──
-            if bomb.defn.bomb_type.value == "cluster" and not bomb.is_child:
+            if bomb.defn.bomb_type == BombType.CLUSTER and not bomb.is_child:
                 count = bomb.defn.cluster_count
                 spread_speed = bomb.defn.cluster_spread_speed
                 spread_dist = bomb.defn.cluster_spread_distance
@@ -1727,23 +1850,23 @@ class Game:
 
                     self.bombs.append(
                         Bomb(bomb.target_x, bomb.target_y, child_tx, child_ty,
-                             bomb.owner_id, child_def, is_child=True)
+                             bomb.owner_id, child_def, is_child=True, owner_team=bomb.owner_team)
                     )
 
             # ── 毒气弹：爆炸后生成持续毒雾 ──
-            if bomb.defn.bomb_type.value == "gas":
+            if bomb.defn.bomb_type == BombType.GAS:
                 self.gas_clouds.append(
-                    GasCloud(bomb.target_x, bomb.target_y, bomb.owner_id, bomb.defn)
+                    GasCloud(bomb.target_x, bomb.target_y, bomb.owner_id, bomb.defn, owner_team=bomb.owner_team)
                 )
 
     # ── Gas cloud effects ───────────────────────────────────────────────────
 
     def check_gas_cloud_effects(self, dt):
         for cloud in self.gas_clouds:
-            for player in (self.player1, self.player2):
+            for player in self.players:
                 if not player.alive:
                     continue
-                if player.char.id == cloud.owner_id:
+                if player.team == cloud.owner_team:
                     continue
                 if cloud.contains(player.x, player.y, player.radius):
                     player.take_damage(cloud.dps * dt)
@@ -1754,7 +1877,7 @@ class Game:
             for pet in self.pets:
                 if isinstance(pet, GhostPet):
                     continue
-                if pet.owner_id == cloud.owner_id:
+                if pet.owner_team == cloud.owner_team:
                     continue
                 pet_x, pet_y = self._get_pet_head(pet)
                 pet_r = self._get_pet_radius(pet)
@@ -1765,69 +1888,74 @@ class Game:
 
     # ── Win condition ────────────────────────────────────────────────────────
     def check_win_condition(self):
-        if not self.player1.alive:
-            self.game_over = True
-            self.winner = self.player2.char.name
-            self.state = "game_over"
-            self.logger.end_match(self.player2.char.name, self.player1.char.name,
-                                  self.player2.hp, self.player1.hp)
-        elif not self.player2.alive:
-            self.game_over = True
-            self.winner = self.player1.char.name
-            self.state = "game_over"
-            self.logger.end_match(self.player1.char.name, self.player2.char.name,
-                                  self.player1.hp, self.player2.hp)
+        if self.mode == "1v1":
+            alive = [p for p in self.players if p.alive]
+            if len(alive) <= 1:
+                self.game_over = True
+                if alive:
+                    self.winner = alive[0].char.name
+                    loser = next(p for p in self.players if not p.alive)
+                    self.logger.end_match(alive[0].char.name, loser.char.name,
+                                          alive[0].hp, loser.hp)
+                self.state = "game_over"
+        else:  # 2v2
+            team0_alive = [p for p in self.players if p.team == 0 and p.alive]
+            team1_alive = [p for p in self.players if p.team == 1 and p.alive]
+            if not team0_alive or not team1_alive:
+                self.game_over = True
+                if not team0_alive:
+                    self.winner = "B队"
+                else:
+                    self.winner = "A队"
+                self.state = "game_over"
+                self.logger.end_match_2v2(self.players)
 
     # ── Rendering ────────────────────────────────────────────────────────────
     def draw_arena(self):
         self.arena.draw(self.screen)
 
     def draw_hp(self):
+        if self.mode == "1v1":
+            self._draw_hp_1v1()
+        else:
+            self._draw_hp_2v2()
+
+    def _draw_hp_1v1(self):
         cx, cy = CENTER
-
-        p1 = self.player1
-        p2 = self.player2
-
-        # P1 HP bar (left of center)
-        hp_ratio_1 = p1.hp / INITIAL_HP
+        p1 = self.players[0]
+        p2 = self.players[1]
         bar_w, bar_h = 140, 18
+
+        # P1 HP bar (left)
+        hp_ratio_1 = p1.hp / INITIAL_HP
         bar_x1 = cx - bar_w - 40
         bar_y = cy - 35
-
         name1 = self.font_small.render(p1.char.name, True, p1.char.color)
         self.screen.blit(name1, (bar_x1 + bar_w // 2 - name1.get_width() // 2, bar_y - 20))
-
         pygame.draw.rect(self.screen, (40, 40, 50), (bar_x1, bar_y, bar_w, bar_h), border_radius=4)
         hp_fill_w = int(bar_w * hp_ratio_1)
         if hp_fill_w > 0:
             pygame.draw.rect(self.screen, p1.char.color, (bar_x1, bar_y, hp_fill_w, bar_h), border_radius=4)
         pygame.draw.rect(self.screen, (80, 80, 90), (bar_x1, bar_y, bar_w, bar_h), 1, border_radius=4)
-
-        hp_text1 = self.font_small.render(f"HP {p1.hp}/{INITIAL_HP}", True, TEXT_COLOR)
+        hp_text1 = self.font_small.render(f"HP {p1.hp:.0f}/{INITIAL_HP}", True, TEXT_COLOR)
         self.screen.blit(hp_text1, (bar_x1 + bar_w // 2 - hp_text1.get_width() // 2, bar_y + 1))
 
-        # P2 HP bar (right of center)
+        # P2 HP bar (right)
         hp_ratio_2 = p2.hp / INITIAL_HP
         bar_x2 = cx + 40
-        bar_y = cy - 35
-
         name2 = self.font_small.render(p2.char.name, True, p2.char.color)
         self.screen.blit(name2, (bar_x2 + bar_w // 2 - name2.get_width() // 2, bar_y - 20))
-
         pygame.draw.rect(self.screen, (40, 40, 50), (bar_x2, bar_y, bar_w, bar_h), border_radius=4)
         hp_fill_w = int(bar_w * hp_ratio_2)
         if hp_fill_w > 0:
             pygame.draw.rect(self.screen, p2.char.color, (bar_x2, bar_y, hp_fill_w, bar_h), border_radius=4)
         pygame.draw.rect(self.screen, (80, 80, 90), (bar_x2, bar_y, bar_w, bar_h), 1, border_radius=4)
-
-        hp_text2 = self.font_small.render(f"HP {p2.hp}/{INITIAL_HP}", True, TEXT_COLOR)
+        hp_text2 = self.font_small.render(f"HP {p2.hp:.0f}/{INITIAL_HP}", True, TEXT_COLOR)
         self.screen.blit(hp_text2, (bar_x2 + bar_w // 2 - hp_text2.get_width() // 2, bar_y + 1))
 
-        # Center VS
         vs_text = self.font.render("VS", True, TEXT_COLOR)
         self.screen.blit(vs_text, (cx - vs_text.get_width() // 2, cy - vs_text.get_height() // 2))
 
-        # Skill info below center
         for p, bar_x in [(p1, bar_x1), (p2, bar_x2)]:
             infos: list[tuple[str, tuple[int, int, int]]] = []
             if p.char.skill is not None:
@@ -1850,6 +1978,34 @@ class Game:
                 surf = self.font_small.render(info, True, color)
                 self.screen.blit(surf, (bar_x + bar_w // 2 - surf.get_width() // 2, bar_y + bar_h + 10 + k * 14))
 
+    def _draw_hp_2v2(self):
+        bar_w, bar_h = 120, 14
+        team_a = [p for p in self.players if p.team == 0]
+        team_b = [p for p in self.players if p.team == 1]
+
+        # Team labels
+        a_label = self.font.render("A队", True, (100, 180, 255))
+        b_label = self.font.render("B队", True, (255, 130, 100))
+        self.screen.blit(a_label, (50, 10))
+        self.screen.blit(b_label, (WIDTH - 50 - b_label.get_width(), 10))
+        vs_text = self.font.render("VS", True, TEXT_COLOR)
+        self.screen.blit(vs_text, (CENTER[0] - vs_text.get_width() // 2, 10))
+
+        for team_idx, team_players, x_offset in [(0, team_a, 15), (1, team_b, WIDTH - bar_w - 15)]:
+            for pi, p in enumerate(team_players):
+                y = 50 + pi * 55
+                name = self.font_small.render(p.char.name, True, p.char.color)
+                self.screen.blit(name, (x_offset, y))
+                bar_y = y + 18
+                hp_ratio = p.hp / INITIAL_HP
+                pygame.draw.rect(self.screen, (40, 40, 50), (x_offset, bar_y, bar_w, bar_h), border_radius=3)
+                if hp_ratio > 0:
+                    fill_w = int(bar_w * hp_ratio)
+                    pygame.draw.rect(self.screen, p.char.color, (x_offset, bar_y, fill_w, bar_h), border_radius=3)
+                pygame.draw.rect(self.screen, (80, 80, 90), (x_offset, bar_y, bar_w, bar_h), 1, border_radius=3)
+                hp_text = self.font_small.render(f"HP {p.hp:.0f}/{INITIAL_HP}", True, TEXT_COLOR)
+                self.screen.blit(hp_text, (x_offset + 2, bar_y + 1))
+
     def draw_game_over(self):
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 160))
@@ -1865,10 +2021,10 @@ class Game:
 
     # ── Reset ────────────────────────────────────────────────────────────────
     def reset(self):
-        self.state = "select_p1"
-        self.selection = [None, None]
-        self.player1 = None
-        self.player2 = None
+        self.state = "mode_select"
+        self.mode = None
+        self.selection = []
+        self.players = []
         self.projectiles = []
         self.lightning_bolts = []
         self.lightning_traps = []
@@ -1906,8 +2062,7 @@ class Game:
         self._pickup_spawn_timer = self._pickup_spawn_interval
 
         # 仅当武器大师上场时才生成武器图标
-        wm_on_field = ((self.player1 and self.player1.char.id == "weaponmaster" and self.player1.alive)
-                       or (self.player2 and self.player2.char.id == "weaponmaster" and self.player2.alive))
+        wm_on_field = any(p.char.id == "weaponmaster" and p.alive for p in self.players)
         if not wm_on_field:
             return
 
@@ -1937,7 +2092,7 @@ class Game:
     def _update_fighting(self, dt):
         """单帧战斗逻辑更新（不含渲染），可供测试脚本复用。"""
         # Skill timers（技能锁期间暂停冷却）
-        for p in (self.player1, self.player2):
+        for p in self.players:
             if p.skill_locked:
                 continue
             p.skill_timer += dt
@@ -1948,42 +2103,36 @@ class Game:
             p.bomb_timer += dt
             p.bomb_timer2 += dt
 
-        self.try_use_skill(self.player1)
-        self.try_use_skill(self.player2)
-        self.try_use_skill2(self.player1)
-        self.try_use_skill2(self.player2)
-        self.try_use_lightning(self.player1)
-        self.try_use_lightning(self.player2)
-        self.try_use_lightning_trap(self.player1)
-        self.try_use_lightning_trap(self.player2)
-        self.try_use_pet(self.player1)
-        self.try_use_pet(self.player2)
-        self.try_use_bomb(self.player1)
-        self.try_use_bomb(self.player2)
-        self.try_use_bomb2(self.player1)
-        self.try_use_bomb2(self.player2)
+        for p in self.players:
+            self.try_use_skill(p)
+            self.try_use_skill2(p)
+            self.try_use_lightning(p)
+            self.try_use_lightning_trap(p)
+            self.try_use_pet(p)
+            self.try_use_bomb(p)
+            self.try_use_bomb2(p)
 
         # Spawn weapon pickups
         self._spawn_weapon_pickups(dt)
 
         # Apply weapon speed multipliers before movement
-        for p in (self.player1, self.player2):
+        for p in self.players:
             p.weapon_speed_mult = 1.0
             for w in self.weapons:
                 if w.owner == p:
                     p.weapon_speed_mult = min(p.weapon_speed_mult, w.defn.speed_mult)
 
         # Compute seek targets for weaponmaster when empty-handed
-        seek = {id(self.player1): None, id(self.player2): None}
-        for p in (self.player1, self.player2):
+        seek = {}
+        for p in self.players:
             if p.char.id == "weaponmaster" and p.pickup_uses_left <= 0 and p.alive:
                 nearest = self._find_nearest_pickup(p)
                 if nearest:
                     seek[id(p)] = (nearest.x, nearest.y)
 
         # Movement
-        self.player1.update(self.arena, dt, seek_target=seek[id(self.player1)])
-        self.player2.update(self.arena, dt, seek_target=seek[id(self.player2)])
+        for p in self.players:
+            p.update(self.arena, dt, seek_target=seek.get(id(p)))
 
         # Player-to-player bounce
         self.resolve_player_collision()
@@ -2017,11 +2166,11 @@ class Game:
         self.weapons = [w for w in self.weapons if not w.is_expired()]
 
         # 武器大师：检查拾取武器过期（次数用完 or 10秒）
-        for p in (self.player1, self.player2):
+        for p in self.players:
             if p.char.id == "weaponmaster" and p.pickup_uses_left > 0:
                 p.pickup_timer += dt
                 if p.pickup_uses_left <= 0 or p.pickup_timer >= 10.0:
-                    self.weapons = [w for w in self.weapons if w.owner_id != p.char.id]
+                    self.weapons = [w for w in self.weapons if w.owner is not p]
                     p.pickup_uses_left = 0
                     p.pickup_timer = 0.0
         for bomb in self.bombs:
@@ -2029,25 +2178,24 @@ class Game:
         self.bombs = [b for b in self.bombs if not b.is_expired()]
         for clone in self.clones:
             clone.update(dt)
-        # 每帧将所有追踪实体重定向到活跃分身
-        for clone in self.clones:
-            if clone.alive:
-                self._redirect_tracking_to_clone(clone)
-        # 克隆消失时恢复追踪目标
-        expired_clones = [c for c in self.clones if c.is_expired()]
-        for c in expired_clones:
-            self._restore_tracking_targets(c)
-        self.clones = [c for c in self.clones if not c.is_expired()]
+        # 清理过期克隆并恢复追踪目标
+        surviving = []
+        for c in self.clones:
+            if c.is_expired():
+                self._restore_tracking_targets(c)
+            else:
+                surviving.append(c)
+        self.clones = surviving
         for palm in self.palms:
             palm.update(dt)
             if not palm._damage_done:
-                for player in (self.player1, self.player2):
-                    if not player.alive or player.char.id == palm.owner_id:
+                for player in self.players:
+                    if not player.alive or player.team == palm.owner_team:
                         continue
                     if math.hypot(palm.x - player.x, palm.y - player.y) < palm.radius + player.radius:
                         player.take_damage(palm.skill.damage)
                 for pet in self.pets:
-                    if pet.owner_id == palm.owner_id:
+                    if pet.owner_team == palm.owner_team:
                         continue
                     px, py = self._get_pet_head(pet)
                     if math.hypot(palm.x - px, palm.y - py) < palm.radius + self._get_pet_radius(pet):
@@ -2063,13 +2211,13 @@ class Game:
             ft.update(dt)
             # 首帧砸落伤害
             if not ft._damage_done:
-                for player in (self.player1, self.player2):
-                    if not player.alive or player.char.id == ft.owner_id:
+                for player in self.players:
+                    if not player.alive or player.team == ft.owner_team:
                         continue
                     if math.hypot(ft.x - player.x, ft.y - player.y) < ft.radius + player.radius:
                         player.take_damage(ft.skill.damage)
                 for pet in self.pets:
-                    if pet.owner_id == ft.owner_id:
+                    if pet.owner_team == ft.owner_team:
                         continue
                     px, py = self._get_pet_head(pet)
                     if math.hypot(ft.x - px, ft.y - py) < ft.radius + self._get_pet_radius(pet):
@@ -2086,8 +2234,10 @@ class Game:
             hm.update(dt)
             if hm.age >= 0.9 and not hm._teleport_done:
                 hm._teleport_done = True
-                owner = (self.player1 if self.player1.char.id == hm.owner_id
-                         else self.player2)
+                owner = next((p for p in self.players
+                              if p.char.id == hm.owner_id and p.team == hm.owner_team), None)
+                if owner is None:
+                    continue
                 if owner.alive:
                     owner.x = hm.x
                     owner.y = hm.y
@@ -2101,7 +2251,7 @@ class Game:
         # 生命之树：更新 + 治疗 + 碰撞弹开
         for tree in self.trees:
             tree.update(dt)
-            for player in (self.player1, self.player2):
+            for player in self.players:
                 if player.alive:
                     tree.try_heal(player, dt)
                     tree.bounce_player(player)
@@ -2120,8 +2270,8 @@ class Game:
                 lb._detect_target = None
             lb.update(dt)
             if lb.state == LeafBlade.FIRING and not lb._hit:
-                for player in (self.player1, self.player2):
-                    if not player.alive or player.char.id == lb.owner_id:
+                for player in self.players:
+                    if not player.alive or player.team == lb.owner_team:
                         continue
                     if math.hypot(lb.x - player.x, lb.y - player.y) < lb.radius + player.radius:
                         player.take_damage(lb.damage)
@@ -2131,7 +2281,7 @@ class Game:
                     for pet in self.pets:
                         if isinstance(pet, GhostPet):
                             continue
-                        if pet.owner_id == lb.owner_id:
+                        if pet.owner_team == lb.owner_team:
                             continue
                         px, py = self._get_pet_head(pet)
                         if math.hypot(lb.x - px, lb.y - py) < lb.radius + self._get_pet_radius(pet):
@@ -2139,8 +2289,8 @@ class Game:
                             lb._hit = True
                             break
             elif lb.state == LeafBlade.ORBIT:
-                for player in (self.player1, self.player2):
-                    if not player.alive or player.char.id == lb.owner_id:
+                for player in self.players:
+                    if not player.alive or player.team == lb.owner_team:
                         continue
                     if math.hypot(lb.x - player.x, lb.y - player.y) < lb.radius + player.radius:
                         tid = id(player)
@@ -2151,7 +2301,7 @@ class Game:
                 for pet in self.pets:
                     if isinstance(pet, GhostPet):
                         continue
-                    if pet.owner_id == lb.owner_id:
+                    if pet.owner_team == lb.owner_team:
                         continue
                     px, py = self._get_pet_head(pet)
                     if math.hypot(lb.x - px, lb.y - py) < lb.radius + self._get_pet_radius(pet):
@@ -2168,7 +2318,7 @@ class Game:
             if v.is_expired():
                 expired_vortexes.append(v)
                 continue
-            for player in (self.player1, self.player2):
+            for player in self.players:
                 if v.apply_to_player(player):
                     player.take_damage(v.skill.damage * dt)
             for pet in self.pets:
@@ -2177,7 +2327,7 @@ class Game:
                 if v.apply_to_pet(pet):
                     pet.take_damage(v.skill.damage * dt)
         for v in expired_vortexes:
-            for player in (self.player1, self.player2):
+            for player in self.players:
                 tid = id(player)
                 if tid in v._captured:
                     player.vx = v._captured_vx.get(tid, player.vx)
@@ -2194,7 +2344,7 @@ class Game:
         for wave in self.waves:
             wave.update(dt)
             if not wave.is_expired():
-                for player in (self.player1, self.player2):
+                for player in self.players:
                     if wave.collides_with_player(player):
                         player.take_damage(wave.damage)
                         angle = math.atan2(player.y - wave.y, player.x - wave.x)
@@ -2217,9 +2367,14 @@ class Game:
             self._wave_burst_timer -= dt
             if self._wave_burst_timer <= 0:
                 owner = self._wave_owner
-                opponent = self.player1 if owner is self.player2 else self.player2
-                angle = math.atan2(opponent.y - owner.y, opponent.x - owner.x)
-                self.waves.append(WaveEntity(owner.x, owner.y, angle, owner.char.id, owner.char.skill2))
+                opponent = self._pick_opponent(owner)
+                if opponent is not None:
+                    angle = math.atan2(opponent.y - owner.y, opponent.x - owner.x)
+                    self.waves.append(WaveEntity(owner.x, owner.y, angle, owner.char.id, owner.char.skill2, owner_team=owner.team))
+                    self._wave_burst_remaining -= 1
+                else:
+                    self._wave_burst_remaining = 0
+                self.waves.append(WaveEntity(owner.x, owner.y, angle, owner.char.id, owner.char.skill2, owner_team=owner.team))
                 self._wave_burst_remaining -= 1
                 if self._wave_burst_remaining > 0:
                     self._wave_burst_timer = 0.5
@@ -2266,8 +2421,11 @@ class Game:
                 if event.type == pygame.QUIT:
                     self.running = False
 
-                if self.state in ("select_p1", "select_p2"):
+                if self.state in ("select_p1", "select_p2", "select_p3", "select_p4"):
                     self.handle_selection_input(event)
+
+                if self.state == "mode_select":
+                    self.handle_mode_input(event)
 
                 if self.state == "game_over" and event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_r:
@@ -2280,13 +2438,15 @@ class Game:
                 self._update_fighting(dt)
 
             # ── Render ───────────────────────────────────────────────────────
-            if self.state in ("select_p1", "select_p2"):
+            if self.state == "mode_select":
+                self.draw_mode_select()
+            elif self.state in ("select_p1", "select_p2", "select_p3", "select_p4"):
                 self.draw_selection_screen()
             else:
                 self.draw_arena()
 
                 # Draw trails behind projectiles and players
-                for p in (self.player1, self.player2):
+                for p in self.players:
                     if p.alive and p.char.trail_enabled and len(p.trail_points) >= 2:
                         trail_color = (135, 206, 235)
                         for i in range(0, len(p.trail_points), 2):
@@ -2340,10 +2500,9 @@ class Game:
                 for pickup in self.weapon_pickups:
                     pickup.draw(self.screen)
 
-                if self.player1.alive:
-                    self.player1.draw(self.screen, self.font_small)
-                if self.player2.alive:
-                    self.player2.draw(self.screen, self.font_small)
+                for p in self.players:
+                    if p.alive:
+                        p.draw(self.screen, self.font_small)
 
                 # Draw weapons on top of players
                 for weapon in self.weapons:
