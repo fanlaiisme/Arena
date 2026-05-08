@@ -4,3 +4,4 @@ output/
 .env
 pyproject.toml
 uv.lock
+demand.txt
