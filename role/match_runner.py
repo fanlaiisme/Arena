@@ -58,9 +58,26 @@ def run_headless_match(char_ids: list[str]) -> dict:
 
     game.logger.close()
 
+    # 提取胜/败方 HP（1v1 和 2v2 均适用）
+    if game.mode == "1v1":
+        winner_player = next((p for p in game.players if p.alive), None)
+        loser_player = next((p for p in game.players if not p.alive), None)
+        winner_hp = winner_player.hp if winner_player else 0
+        loser_hp = loser_player.hp if loser_player else 0
+    else:
+        # 2v2: 存活队伍 vs 全灭队伍
+        team_a_alive = [p for p in game.players if p.team == 0 and p.alive]
+        team_b_alive = [p for p in game.players if p.team == 1 and p.alive]
+        winning_team = team_a_alive if team_a_alive else team_b_alive
+        losing_team = team_b_alive if team_a_alive else team_a_alive
+        winner_hp = round(sum(p.hp for p in winning_team), 1)
+        loser_hp = round(sum(p.hp for p in losing_team), 1)
+
     return {
         "winner": game.winner,
         "mode": game.mode,
         "duration_frames": frame,
         "char_ids": char_ids,
+        "winner_final_hp": winner_hp,
+        "loser_final_hp": loser_hp,
     }
