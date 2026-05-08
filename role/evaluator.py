@@ -34,25 +34,55 @@ class Evaluator:
 你不需要判断 Bob 是否"故意说谎"，因为你审查的是模型输出质量，而非角色意图。"""
 
     def _load_stats(self) -> str:
-        """读取真实战绩数据。"""
+        """读取真实战绩数据，构造为 LLM 可读的文本格式。"""
         stats_file = os.path.join(
             os.path.dirname(__file__),
-            "data", "Bob", "tournament_stats-1.md"
+            "data", "Bob", "tournament_stats.json"
         )
         if os.path.exists(stats_file):
             with open(stats_file, "r", encoding="utf-8") as f:
-                return f.read()
+                data = json.load(f)
+            return self._format_stats_as_markdown(data)
         return "（暂无赛事数据）"
 
+    @staticmethod
+    def _format_stats_as_markdown(data: dict) -> str:
+        """将 JSON 战绩数据格式化为类似原 Markdown 表格的文本。"""
+        lines = ["# 角斗场循环赛结果"]
+        lines.append(f"- 时间: {data['meta']['date']}")
+        lines.append("")
+        lines.append("## 总排名（按总胜场数）")
+        lines.append("| 排名 | 角斗士 | 胜场 | 总场 | 胜率 |")
+        lines.append("|------|--------|------|------|------|")
+        for g in data["rankings"]:
+            pct = f"{g['win_rate']*100:.1f}%"
+            lines.append(f"| {g['rank']} | {g['name']} | {g['wins']} | {g['total']} | {pct} |")
+        lines.append("")
+        lines.append("## 各角斗士对战详情")
+        for g in data["rankings"]:
+            lines.append(f"### {g['name']}")
+            lines.append("| 对手 | 胜场 | 胜率 |")
+            lines.append("|------|------|------|")
+            matchups = data["matchups"].get(g["char_id"], {})
+            sorted_m = sorted(matchups.items(), key=lambda x: -x[1]["rate"])
+            for opp_id, m in sorted_m:
+                opp = next((r for r in data["rankings"] if r["char_id"] == opp_id), None)
+                opp_name = opp["name"] if opp else opp_id
+                lines.append(f"| {opp_name} | {m['wins']} | {m['rate']*100:.0f}% |")
+            lines.append("")
+        return "\n".join(lines)
+
     def _extract_gladiator_names(self) -> list[str]:
-        """从 Markdown ### 标题中提取所有真实角斗士名称。"""
-        names = []
-        for line in self._stats.split('\n'):
-            if line.startswith('### '):
-                name = line[4:].strip()
-                if name:
-                    names.append(name)
-        return names
+        """从 JSON 战绩数据中提取所有真实角斗士名称。"""
+        stats_file = os.path.join(
+            os.path.dirname(__file__),
+            "data", "Bob", "tournament_stats.json"
+        )
+        if os.path.exists(stats_file):
+            with open(stats_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return [g["name"] for g in data["rankings"]]
+        return []
 
     # ── 幻觉检测 ────────────────────────────────────────────────────────────
 

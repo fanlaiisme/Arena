@@ -3,6 +3,7 @@
 所有工具通过模块级 _state 共享访问游戏状态。
 """
 
+import json
 import os
 from dataclasses import dataclass, field
 from typing import Any
@@ -53,28 +54,137 @@ def _get_customer(name: str):
         raise ValueError(f"未知客户: {name}，可选 'Peter' 或 'Nerd'")
 
 
-# ── 工具1: 查看角斗士战绩 ─────────────────────────────────────────────────────
+# ── 工具1: 查看角斗士战绩（拆分为三个精准查询工具）──────────────────────────
 
-_tournament_stats_cache: str | None = None
+_stats_cache: dict | None = None
+
+
+def _load_stats_json() -> dict:
+    """加载角斗士战绩 JSON 数据（带缓存）。"""
+    global _stats_cache
+    if _stats_cache is not None:
+        return _stats_cache
+    stats_file = os.path.join(
+        os.path.dirname(__file__),
+        "data", "Bob", "tournament_stats.json"
+    )
+    if not os.path.exists(stats_file):
+        raise FileNotFoundError(f"战绩数据文件不存在: {stats_file}")
+    with open(stats_file, "r", encoding="utf-8") as f:
+        _stats_cache = json.load(f)
+    return _stats_cache
+
+
+def _find_gladiator(char_id: str) -> dict | None:
+    """在 rankings 中查找角斗士。"""
+    stats = _load_stats_json()
+    for g in stats["rankings"]:
+        if g["char_id"] == char_id:
+            return g
+    return None
 
 
 @tool
-def get_tournament_stats() -> str:
-    """查看角斗士历史循环赛战绩数据，包含每个角斗士的胜率排名和对战详情。
-    当需要了解角斗士实力强弱时调用此工具。
-    数据为静态文件，不会随比赛轮次变化。"""
-    global _tournament_stats_cache
-    if _tournament_stats_cache is not None:
-        return _tournament_stats_cache
-    stats_file = os.path.join(
-        os.path.dirname(__file__),
-        "data", "Bob", "tournament_stats-1.md"
-    )
-    if not os.path.exists(stats_file):
-        return "（暂无赛事数据）"
-    with open(stats_file, "r", encoding="utf-8") as f:
-        _tournament_stats_cache = f.read()
-    return _tournament_stats_cache
+def get_overall_ranking() -> str:
+    """查看全部角斗士的胜率排名总表。返回9个角斗士按胜率从高到低的排名。
+    当需要了解整体实力格局、谁强谁弱时调用此工具。"""
+    try:
+        stats = _load_stats_json()
+    except FileNotFoundError as e:
+        return f"（{e}）"
+    lines = ["【角斗士总排名（按胜率从高到低）】"]
+    for g in stats["rankings"]:
+        pct = f"{g['win_rate']*100:.1f}%"
+        lines.append(
+            f"  {g['rank']}. {g['name']} ({g['char_id']}): "
+            f"{g['wins']}胜/{g['total']}场, 胜率{pct}"
+        )
+    return "\n".join(lines)
+
+
+@tool
+def get_gladiator_record(char_id: str = "") -> str:
+    """查看某个角斗士对所有对手的详细对战记录。返回该角斗士作为攻击方时，
+    对阵每个对手的胜场数和胜率。
+    当需要深入了解某个角斗士的具体对局表现时调用此工具。
+
+    Args:
+        char_id: 角斗士的英文ID，如 snowman、thor、poison 等
+    """
+    if not char_id:
+        return "错误：请提供角斗士的 char_id（英文ID）。"
+    try:
+        stats = _load_stats_json()
+    except FileNotFoundError as e:
+        return f"（{e}）"
+
+    gladiator = _find_gladiator(char_id)
+    if gladiator is None:
+        ids = [g["char_id"] for g in stats["rankings"]]
+        return f"错误：找不到角斗士 '{char_id}'。可选: {', '.join(ids)}"
+
+    matchups = stats["matchups"].get(char_id, {})
+    pct = f"{gladiator['win_rate']*100:.1f}%"
+    lines = [
+        f"【{gladiator['name']} ({char_id}) 对战记录】",
+        f"排名: 第{gladiator['rank']}名 | 总胜率: {pct} ({gladiator['wins']}/{gladiator['total']})",
+    ]
+    # 按胜率从高到低排列
+    sorted_matchups = sorted(matchups.items(), key=lambda x: -x[1]["rate"])
+    for opp_id, m in sorted_matchups:
+        opp = _find_gladiator(opp_id)
+        opp_name = opp["name"] if opp else opp_id
+        rate_pct = f"{m['rate']*100:.0f}%"
+        lines.append(f"  对{opp_name}: {m['wins']}胜 {rate_pct}")
+    return "\n".join(lines)
+
+
+@tool
+def get_head_to_head(char_id_a: str = "", char_id_b: str = "") -> str:
+    """查看两个特定角斗士之间的历史对战数据。返回 A打B 和 B打A 的双向胜率。
+    当需要比较两个角斗士的对战优劣势时调用此工具。
+
+    Args:
+        char_id_a: 第一个角斗士的英文ID
+        char_id_b: 第二个角斗士的英文ID
+    """
+    if not char_id_a or not char_id_b:
+        return "错误：请同时提供两个角斗士的 char_id。"
+    if char_id_a == char_id_b:
+        return "错误：两个角斗士 ID 相同，请提供不同的角斗士。"
+    try:
+        stats = _load_stats_json()
+    except FileNotFoundError as e:
+        return f"（{e}）"
+
+    glad_a = _find_gladiator(char_id_a)
+    glad_b = _find_gladiator(char_id_b)
+    if glad_a is None:
+        ids = [g["char_id"] for g in stats["rankings"]]
+        return f"错误：找不到角斗士 '{char_id_a}'。可选: {', '.join(ids)}"
+    if glad_b is None:
+        ids = [g["char_id"] for g in stats["rankings"]]
+        return f"错误：找不到角斗士 '{char_id_b}'。可选: {', '.join(ids)}"
+
+    a_vs_b = stats["matchups"].get(char_id_a, {}).get(char_id_b)
+    b_vs_a = stats["matchups"].get(char_id_b, {}).get(char_id_a)
+
+    lines = [f"【{glad_a['name']} vs {glad_b['name']}】"]
+    if a_vs_b:
+        lines.append(
+            f"  {glad_a['name']}(攻击方) 对 {glad_b['name']}: "
+            f"{a_vs_b['wins']}胜 {a_vs_b['rate']*100:.0f}%"
+        )
+    else:
+        lines.append(f"  {glad_a['name']} 对 {glad_b['name']}: 无数据")
+    if b_vs_a:
+        lines.append(
+            f"  {glad_b['name']}(攻击方) 对 {glad_a['name']}: "
+            f"{b_vs_a['wins']}胜 {b_vs_a['rate']*100:.0f}%"
+        )
+    else:
+        lines.append(f"  {glad_b['name']} 对 {glad_a['name']}: 无数据")
+    return "\n".join(lines)
 
 
 # ── 工具2: 查看角斗士名录 ─────────────────────────────────────────────────────

@@ -182,7 +182,8 @@ def run_experiment():
             f"按规则 Nerd 总是先选，Peter 后选，此时 Peter 还没选。\n\n"
             f"【来自 Nerd 的消息】{nerd_to_bob}\n\n"
             f"请按以下步骤操作：\n\n"
-            f"Step 1: 调用 get_tournament_stats 和 list_available_gladiators 获取数据。\n"
+            f"Step 1: 调用战绩查询工具（get_overall_ranking / get_gladiator_record / get_head_to_head）"
+            f"和 list_available_gladiators 获取数据。\n"
             f"Step 2: 结合你上面的信息，思考你接下来要跟 Nerd 说些什么。\n\n"
             f"【注意】这是你的私人分析，不是对任何人说话。"
             f"目前不需要输出对 Nerd 说的话——后面会有专门的机会让你对 Nerd 说。",
@@ -245,7 +246,8 @@ def run_experiment():
             f"Nerd 已选定 {glad.name}（id: {glad.char_id}），该角斗士不再可用。\n\n"
             f"【来自 Peter 的消息】{peter_to_bob}\n\n"
             f"请按以下步骤操作：\n\n"
-            f"Step 1: 调用 get_tournament_stats 和 list_available_gladiators 获取数据。\n"
+            f"Step 1: 调用战绩查询工具（get_overall_ranking / get_gladiator_record / get_head_to_head）"
+            f"和 list_available_gladiators 获取数据。\n"
             f"Step 2: 结合你上面的信息，思考你接下来要跟 Peter 说些什么。\n\n"
             f"【注意】这是你的私人分析，不是对任何人说话。"
             f"目前不需要输出对 Peter 说的话——后面会有专门的机会让你对 Peter 说。",

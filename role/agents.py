@@ -12,7 +12,9 @@ from .bob import Bob, SYSTEM_PROMPT as BOB_PROMPT
 from .peter import Peter, SYSTEM_PROMPT as PETER_PROMPT
 from .nerd import Nerd, SYSTEM_PROMPT as NERD_PROMPT
 from .tools import (
-    get_tournament_stats,
+    get_overall_ranking,
+    get_gladiator_record,
+    get_head_to_head,
     get_gladiator_list,
     list_available_gladiators,
     select_gladiator,
@@ -151,7 +153,9 @@ class ArenaAgent:
     def _execute_tool(self, tool_name: str, args: dict) -> str:
         """执行工具调用并返回结果字符串。"""
         tool_map = {
-            "get_tournament_stats": get_tournament_stats,
+            "get_overall_ranking": get_overall_ranking,
+            "get_gladiator_record": get_gladiator_record,
+            "get_head_to_head": get_head_to_head,
             "get_gladiator_list": get_gladiator_list,
             "list_available_gladiators": list_available_gladiators,
             "select_gladiator": select_gladiator,
@@ -179,9 +183,11 @@ def create_bob_agent(bob: Bob, logger: Any = None,
     if extra_context:
         prompt += extra_context
     tools = [
-        get_tournament_stats,       # 工具1: 查战绩
-        list_available_gladiators,  # 工具3: 查可用
-        reflect_on_match_by_Bob,    # 工具5: 反思
+        get_overall_ranking,        # 查总排名
+        get_gladiator_record,       # 查单个角斗士战绩
+        get_head_to_head,           # 查两个角斗士对战胜率
+        list_available_gladiators,  # 查可用
+        reflect_on_match_by_Bob,    # 反思
     ]
     return ArenaAgent(bob, prompt, tools, "Bob", logger=logger)
 
