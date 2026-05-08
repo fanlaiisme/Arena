@@ -32,8 +32,9 @@ class LightningBolt:
     """一条折线闪电实例，从释放点向外延伸，由多个随机偏移的线段组成。"""
 
     def __init__(self, x: float, y: float, angle: float,
-                 owner_id: str, defn: LightningDef):
+                 owner_id: str, defn: LightningDef, owner_team: int = 0):
         self.owner_id = owner_id
+        self.owner_team = owner_team
         self.defn = defn
         self.age = 0.0
 
@@ -113,8 +114,9 @@ class LightningTrapBolt:
     """一条闪电陷阱 —— TRAVEL阶段快速移动并反弹，TRAP阶段静止为黄色圆点。"""
 
     def __init__(self, x: float, y: float, angle: float,
-                 owner_id: str, defn: LightningTrapDef):
+                 owner_id: str, defn: LightningTrapDef, owner_team: int = 0):
         self.owner_id = owner_id
+        self.owner_team = owner_team
         self.defn = defn
         self.age = 0.0
         self.state = "TRAVEL"

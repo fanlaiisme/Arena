@@ -146,7 +146,7 @@ class Bob(Role):
 
         # 实际运行 Arena 游戏
         from .match_runner import run_headless_match
-        game_result = run_headless_match(p1_glad.char_id, p2_glad.char_id)
+        game_result = run_headless_match([p1_glad.char_id, p2_glad.char_id])
 
         # 战斗后角斗士需要休息 8 轮（9→8→...→0，经历9次tick才归零）
         p1_glad.rest_remaining = 9

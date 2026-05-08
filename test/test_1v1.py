@@ -2,7 +2,7 @@
 """循环赛自动测试：所有角色两两对决，每对 200 场。
 
 用法:
-    cd /home/fanlai/Arena && .venv/bin/python test/test_snowman_vs_guardian.py
+    cd /home/fanlai/Arena && .venv/bin/python test/test_1v1.py
 """
 
 import os
@@ -28,21 +28,35 @@ TIMEOUT_FRAMES = 7200  # 120s 等效帧数（60fps），超时判平跳过
 
 def _reset_game(game: Game):
     """清理对局状态，准备下一场。"""
-    game.selection = [None, None]
-    game.player1 = None
-    game.player2 = None
+    game.mode = None
+    game.selection = []
+    game.players = []
     game.projectiles = []
     game.lightning_bolts = []
     game.lightning_traps = []
     game.pets = []
     game.weapons = []
+    game.weapon_pickups = []
+    game.clones = []
+    game.palms = []
+    game.fist_traps = []
+    game.vortexes = []
+    game.waves = []
+    game.hunt_marks = []
+    game.trees = []
+    game.leaf_blades = []
+    game.bombs = []
+    game.gas_clouds = []
+    game._wave_burst_remaining = 0
+    game._wave_owner = None
     game.game_over = False
     game.winner = None
-    game.state = "select_p1"
+    game.state = "mode_select"
 
 
 def run_match(game: Game, p1_idx: int, p2_idx: int) -> str | None:
     """运行一场对局，返回胜方角色名；超时返回 None。"""
+    game.mode = "1v1"
     game.selection = [p1_idx, p2_idx]
     game.start_match()
     dt = 1.0 / FPS
