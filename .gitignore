@@ -5,4 +5,3 @@ output/
 pyproject.toml
 uv.lock
 demand.txt
-role/data

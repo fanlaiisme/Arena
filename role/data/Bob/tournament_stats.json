@@ -1,0 +1,111 @@
+{
+  "meta": {
+    "date": "2026-04-27 15:57:53",
+    "matches_per_pair": 200,
+    "timeout_count": 462,
+    "duration_seconds": 1458
+  },
+  "rankings": [
+    {"rank": 1, "char_id": "snowman", "name": "雪人召唤师", "wins": 1422, "total": 1600, "win_rate": 0.889},
+    {"rank": 2, "char_id": "thor", "name": "雷神", "wins": 1116, "total": 1600, "win_rate": 0.698},
+    {"rank": 3, "char_id": "poison", "name": "制毒师", "wins": 1008, "total": 1600, "win_rate": 0.630},
+    {"rank": 4, "char_id": "guardian", "name": "盾卫", "wins": 884, "total": 1600, "win_rate": 0.552},
+    {"rank": 5, "char_id": "venomancer", "name": "毒雾术士", "wins": 720, "total": 1600, "win_rate": 0.450},
+    {"rank": 6, "char_id": "frost", "name": "冰霜法师", "wins": 674, "total": 1600, "win_rate": 0.421},
+    {"rank": 7, "char_id": "lava", "name": "熔岩射手", "wins": 553, "total": 1600, "win_rate": 0.346},
+    {"rank": 8, "char_id": "sharpshooter", "name": "神枪手", "wins": 217, "total": 1600, "win_rate": 0.136},
+    {"rank": 9, "char_id": "boomer", "name": "回旋猎手", "wins": 144, "total": 1600, "win_rate": 0.090}
+  ],
+  "matchups": {
+    "snowman": {
+      "lava": {"wins": 199, "rate": 1.00},
+      "sharpshooter": {"wins": 200, "rate": 1.00},
+      "boomer": {"wins": 200, "rate": 1.00},
+      "frost": {"wins": 183, "rate": 0.92},
+      "venomancer": {"wins": 182, "rate": 0.91},
+      "poison": {"wins": 178, "rate": 0.89},
+      "guardian": {"wins": 149, "rate": 0.74},
+      "thor": {"wins": 131, "rate": 0.66}
+    },
+    "lava": {
+      "sharpshooter": {"wins": 150, "rate": 0.75},
+      "boomer": {"wins": 149, "rate": 0.74},
+      "venomancer": {"wins": 86, "rate": 0.43},
+      "frost": {"wins": 81, "rate": 0.40},
+      "thor": {"wins": 47, "rate": 0.24},
+      "guardian": {"wins": 28, "rate": 0.14},
+      "poison": {"wins": 11, "rate": 0.06},
+      "snowman": {"wins": 1, "rate": 0.00}
+    },
+    "frost": {
+      "boomer": {"wins": 159, "rate": 0.80},
+      "sharpshooter": {"wins": 135, "rate": 0.68},
+      "lava": {"wins": 116, "rate": 0.58},
+      "venomancer": {"wins": 90, "rate": 0.45},
+      "poison": {"wins": 86, "rate": 0.43},
+      "guardian": {"wins": 37, "rate": 0.18},
+      "thor": {"wins": 34, "rate": 0.17},
+      "snowman": {"wins": 17, "rate": 0.08}
+    },
+    "venomancer": {
+      "boomer": {"wins": 161, "rate": 0.80},
+      "sharpshooter": {"wins": 156, "rate": 0.78},
+      "lava": {"wins": 112, "rate": 0.56},
+      "frost": {"wins": 99, "rate": 0.50},
+      "thor": {"wins": 67, "rate": 0.34},
+      "poison": {"wins": 54, "rate": 0.27},
+      "guardian": {"wins": 53, "rate": 0.26},
+      "snowman": {"wins": 18, "rate": 0.09}
+    },
+    "thor": {
+      "boomer": {"wins": 175, "rate": 0.88},
+      "frost": {"wins": 164, "rate": 0.82},
+      "sharpshooter": {"wins": 159, "rate": 0.80},
+      "guardian": {"wins": 156, "rate": 0.78},
+      "lava": {"wins": 152, "rate": 0.76},
+      "venomancer": {"wins": 133, "rate": 0.66},
+      "poison": {"wins": 108, "rate": 0.54},
+      "snowman": {"wins": 69, "rate": 0.34}
+    },
+    "poison": {
+      "sharpshooter": {"wins": 191, "rate": 0.96},
+      "boomer": {"wins": 192, "rate": 0.96},
+      "lava": {"wins": 186, "rate": 0.93},
+      "venomancer": {"wins": 143, "rate": 0.72},
+      "guardian": {"wins": 105, "rate": 0.52},
+      "thor": {"wins": 92, "rate": 0.46},
+      "frost": {"wins": 77, "rate": 0.38},
+      "snowman": {"wins": 22, "rate": 0.11}
+    },
+    "sharpshooter": {
+      "boomer": {"wins": 64, "rate": 0.32},
+      "frost": {"wins": 41, "rate": 0.20},
+      "thor": {"wins": 36, "rate": 0.18},
+      "lava": {"wins": 31, "rate": 0.16},
+      "venomancer": {"wins": 26, "rate": 0.13},
+      "guardian": {"wins": 15, "rate": 0.08},
+      "poison": {"wins": 4, "rate": 0.02},
+      "snowman": {"wins": 0, "rate": 0.00}
+    },
+    "guardian": {
+      "boomer": {"wins": 176, "rate": 0.88},
+      "sharpshooter": {"wins": 158, "rate": 0.79},
+      "frost": {"wins": 138, "rate": 0.69},
+      "lava": {"wins": 136, "rate": 0.68},
+      "venomancer": {"wins": 99, "rate": 0.50},
+      "poison": {"wins": 92, "rate": 0.46},
+      "snowman": {"wins": 51, "rate": 0.26},
+      "thor": {"wins": 34, "rate": 0.17}
+    },
+    "boomer": {
+      "sharpshooter": {"wins": 49, "rate": 0.24},
+      "lava": {"wins": 32, "rate": 0.16},
+      "thor": {"wins": 23, "rate": 0.12},
+      "frost": {"wins": 19, "rate": 0.10},
+      "venomancer": {"wins": 18, "rate": 0.09},
+      "poison": {"wins": 3, "rate": 0.02},
+      "snowman": {"wins": 0, "rate": 0.00},
+      "guardian": {"wins": 0, "rate": 0.00}
+    }
+  }
+}
