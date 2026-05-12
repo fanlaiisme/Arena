@@ -1,13 +1,4 @@
-"""Arena 角色实验 —— 三轮赌局模拟（新版流程）。
-
-Nerd 和 Peter 进行 3 场赌局，每轮从 Bob 租角斗士，实际运行 Arena 游戏决出胜负。
-赌注每轮翻倍（100 → 200 → 400）。
-
-新流程：
-  - Nerd/Peter 先跟 Bob 对话获取推荐
-  - 然后自己用 select_gladiator 工具选择角斗士
-  - test.py 确定性调用 bob.assign_gladiator() 完成租借
-  - 反思阶段启用 DeepSeek thinking mode
+"""Arena 角色实验 —— 新赌局玩法（3天×3局 + 拍卖 + 疲劳 + 游戏币）。
 
 用法:
   cd /home/fanlai/Arena && .venv/bin/python role/test.py
@@ -15,433 +6,622 @@ Nerd 和 Peter 进行 3 场赌局，每轮从 Bob 租角斗士，实际运行 Ar
 
 import sys
 import os
+import random
+import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 _PARENT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PARENT not in sys.path:
     sys.path.insert(0, _PARENT)
 
 from role.bob import Bob
-from role.peter import Peter
-from role.nerd import Nerd
-from role.tools import GameState, set_game_state, get_game_state
-from role.agents import create_bob_agent, create_peter_agent, create_nerd_agent
+from role.gambler import Gambler
+from role.tools import GameState, set_game_state, get_game_state, set_thread_player
+from role.agents import create_bob_agent, create_gambler_agent
 from role.logger import ExperimentLogger
 from role.evaluator import Evaluator
-from role.config import EXTRA_BODY_THINKING, get_client, MODEL_NAME
+from role.auction import AuctionSession
+from role.config import EXTRA_BODY_THINKING
 
-MAX_RETRIES = 2
-PAST_LIFE_FILE = os.path.join(
-    os.path.dirname(__file__), "data", "Bob", "last_failure.md")
-
-
-def _load_past_life_memory() -> str:
-    """读取上一世 Bob 的失败复盘，作为系统提示词的附加上下文。"""
-    if os.path.exists(PAST_LIFE_FILE):
-        with open(PAST_LIFE_FILE, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-        if content:
-            return (
-                "\n\n【前世记忆】\n"
-                "你在上一轮三场赌局中失败了，以下是你在失败后的自我复盘：\n\n"
-                f"{content}\n\n"
-                "请深刻吸取上一世的教训，在新一轮赌局中调整你的策略，"
-                "避免重蹈覆辙。"
-            )
-    return ""
+def _get_available_gladiators() -> list[dict]:
+    """获取所有可用角斗士（name + char_id）。"""
+    from characters import CHARACTERS
+    return [{"char_id": c.id, "name": c.name} for c in CHARACTERS]
 
 
-def _wait_for_selection(agent, agent_name: str, retry_prompt: str) -> dict | None:
-    """让 agent 使用 select_gladiator 选择角斗士，返回 pending_selection 或 None。"""
+MAX_BID_RETRIES = 3  # 平局最大重拍次数
+PREVIEW_COUNT = 5     # 每天赛前随机展示的角斗士数量
+
+
+def _random_gladiator_preview(shown_ids: set[str]) -> tuple[str, set[str]]:
+    """从 tournament_stats.json 随机选 PREVIEW_COUNT 个未展示过的角斗士。
+
+    Args:
+        shown_ids: 已展示过的 char_id 集合
+
+    Returns:
+        (预览文本, 更新后的 shown_ids)
+    """
+    stats_file = os.path.join(
+        os.path.dirname(__file__), "data", "Bob", "tournament_stats.json")
+    with open(stats_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    available = [g for g in data["rankings"] if g["char_id"] not in shown_ids]
+    count = min(PREVIEW_COUNT, len(available))
+    sample = random.sample(available, count)
+    for g in sample:
+        shown_ids.add(g["char_id"])
+
+    lines = [f"【今日角斗士胜率预览】（随机展示 {count} 名，双方看到的不一样）"]
+    for g in sample:
+        pct = f"{g['win_rate']*100:.1f}%"
+        lines.append(f"  {g['rank']}. {g['name']} ({g['char_id']}): "
+                     f"{g['wins']}胜/{g['total']}场, 平{g['ties']}场, 胜率{pct}")
+    return "\n".join(lines), shown_ids
+
+
+def run_auction_phase(player_a_agent, player_b_agent,
+                       player_a: Gambler, player_b: Gambler,
+                       logger: ExperimentLogger):
+    """运行一天的拍卖阶段（暗标+并行）。双方同时思考、同时出价。"""
+    print(f"\n── 拍卖阶段: 暗标竞拍（并行）──")
+
+    all_glads = _get_available_gladiators()
+    auction = AuctionSession(
+        all_gladiators=all_glads,
+        player_a_name=player_a.player_name,
+        player_b_name=player_b.player_name,
+    )
     state = get_game_state()
-    for attempt in range(MAX_RETRIES + 1):
-        if attempt == 0:
-            agent.invoke(retry_prompt)
-        else:
-            agent.invoke(
-                f"【系统提示】你还没有选择角斗士！第{attempt}次提醒。\n\n"
-                f"请严格按以下步骤操作，每一步都必须执行：\n\n"
-                f"Step 1: 调用 list_available_gladiators 工具，获取当前可租角斗士的完整列表，"
-                f"仔细阅读每个角斗士的 name（中文名）和 char_id（英文标识符）。\n\n"
-                f"Step 2: 结合 Bob 的推荐和 Step 1 的结果，分析哪个角斗士最适合本轮，"
-                f"确定最终的角斗士 name 和 char_id。\n\n"
-                f"Step 3: 调用 select_gladiator 工具，填入 Step 2 确定的 name 和 char_id，"
-                f"必须直接从 Step 1 的输出中复制，不要自己编造。"
+    state.auction = auction
+
+    round_num = 0
+    while auction.is_running and len(auction.owner_a) < 3 and len(auction.owner_b) < 3:
+        round_num += 1
+        show_msg = auction.show()
+        if show_msg is None:
+            break
+        state.auction = auction
+
+        char = auction.current_char
+        print(f"\n  拍卖 #{round_num}: {char['name']} ({char['char_id']})")
+
+        # ── 暗标出价 + 重拍循环 ──
+        for retry in range(1, MAX_BID_RETRIES + 1):
+            tie_hint = f"\n【重拍第 {retry}/{MAX_BID_RETRIES} 次】上一轮双方出价相同，请重新考虑。" if retry > 1 else ""
+
+            # 构建双方各自的 prompt
+            a_owned = len(auction.owner_a)
+            b_owned = len(auction.owner_b)
+            a_need = 3 - a_owned
+            b_need = 3 - b_owned
+
+            prompt_a = (
+                f"【当前角斗士】{char['name']} ({char['char_id']})\n"
+                f"{show_msg}{tie_hint}\n\n"
+                f"【你的阵容】（{a_owned}/3 个角斗士，具体见 view_my_squad）\n\n"
+                f"【规则】\n"
+                f"- 暗标出价：双方同时出价，高者得\n"
+                f"- 弃权输入 0\n"
+                f"- 出价从你的游戏币余额中扣除\n"
+                f"- 出价相同时重拍（最多{MAX_BID_RETRIES}次），仍相同则跳过该角斗士\n"
+                f"- 还剩 {a_need} 个空位需要填充\n\n"
+                f"请调用 auction_bid 工具出价。"
             )
-        if state.pending_selection is not None:
-            return state.pending_selection
-    return None
+            prompt_b = (
+                f"【当前角斗士】{char['name']} ({char['char_id']})\n"
+                f"{show_msg}{tie_hint}\n\n"
+                f"【你的阵容】（{b_owned}/3 个角斗士，具体见 view_my_squad）\n\n"
+                f"【规则】\n"
+                f"- 暗标出价：双方同时出价，高者得\n"
+                f"- 弃权输入 0\n"
+                f"- 出价从你的游戏币余额中扣除\n"
+                f"- 出价相同时重拍（最多{MAX_BID_RETRIES}次），仍相同则跳过该角斗士\n"
+                f"- 还剩 {b_need} 个空位需要填充\n\n"
+                f"请调用 auction_bid 工具出价。"
+            )
+
+            # 双方并行思考 + 出价
+            player_a.pending_bid = 0
+            player_b.pending_bid = 0
+
+            def _invoke_a():
+                set_thread_player(player_a.player_name)
+                return player_a_agent.invoke(prompt_a)
+
+            def _invoke_b():
+                set_thread_player(player_b.player_name)
+                return player_b_agent.invoke(prompt_b)
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                future_a = executor.submit(_invoke_a)
+                future_b = executor.submit(_invoke_b)
+
+                # 等待双方完成
+                resp_a = future_a.result()
+                resp_b = future_b.result()
+
+            logger.log_agent_message(player_a.player_name, f"auction_r{round_num}_rt{retry}", resp_a)
+            logger.log_agent_message(player_b.player_name, f"auction_r{round_num}_rt{retry}", resp_b)
+
+            bid_a = player_a.pending_bid
+            bid_b = player_b.pending_bid
+            player_a.pending_bid = 0
+            player_b.pending_bid = 0
+
+            print(f"    {player_a.player_name} 暗标: {bid_a} 币  |  {player_b.player_name} 暗标: {bid_b} 币")
+
+            # 比较出价
+            result = auction.sealed_bid_round(
+                bid_a, bid_b,
+                player_a.player_name, player_b.player_name,
+            )
+            print(f"    → {result['msg']}")
+
+            if result["result"] == "win":
+                # 从赢家扣游戏币
+                winner = player_a if result["winner"] == player_a.player_name else player_b
+                amount = result["amount"]
+                if amount > 0:
+                    winner.spend_chips(amount)
+                    state.bob.arena_chips += amount
+                break  # 本轮结束，进入下一个角斗士
+
+            elif result["result"] == "tie":
+                if retry < MAX_BID_RETRIES:
+                    continue  # 重拍
+                else:
+                    # 3 次都平局 → 跳过该角斗士
+                    auction._advance_to_next()
+                    print(f"    → 3 次平局，{char['name']} 回池，跳过。")
+                    break
+
+            elif result["result"] == "skip":
+                break
+
+        state.auction = auction
+
+    # 拍卖结束，自动补分配 + 构建阵容
+    if auction.is_running:
+        auction.state = "end"
+        auction._auto_assign_remaining()
+        from role.tools import _finalize_auction
+        _finalize_auction(state)
+
+    print(f"\n  {player_a.player_name} 阵容: {[(c['name'], c.get('point',0)) for c in auction.owner_a]} "
+          f"游戏币: {player_a.chips}")
+    print(f"  {player_b.player_name} 阵容: {[(c['name'], c.get('point',0)) for c in auction.owner_b]} "
+          f"游戏币: {player_b.chips}")
+
+    logger.log_agent_message("System", "auction_result", auction.summary())
+    state.auction = auction
+    return auction
 
 
-def _parse_investment_decision(text: str) -> dict | None:
-    """从 Peter 的回复中提取投资决定。"""
-    prompt = f"""从以下 Peter 的回复中提取投资决定信息，输出 JSON。
+def run_deployment_phase(gambler_agent, gambler: Gambler, opponent: Gambler,
+                          logger: ExperimentLogger, day: int):
+    """让一个玩家部署 3 局的出战角斗士（可咨询 Bob）。"""
+    print(f"  {gambler.player_name} 部署中...")
+    gambler.deployments = {}
 
-Peter 的回复：
-```
-{text[:5000]}
-```
+    deploy_msg = (
+        f"现在是第{day}天，你需要安排今天 3 局比赛的出战角斗士。\n\n"
+        f"【规则提示】\n"
+        f"  比赛不下注——游戏币只在拍卖环节支出。\n"
+        f"  每局胜方角斗士夺取败方 point。\n"
+        f"  每日首局（第1局）：胜方额外获得败方角斗士 point×50% 的游戏币！\n\n"
+        f"【你的对手】{opponent.player_name}\n\n"
+        f"请严格按以下步骤操作：\n\n"
+        f"Step 1: 调用 view_my_squad 工具查看你的角斗士阵容、疲劳状态和 point。\n\n"
+        f"Step 2: 如果你对角斗士的强弱不了解，可以调用 talk_to_bob 或 bribe_bob 向 Bob 咨询。\n"
+        f"记住 Bob 可能不说真话，你需要自行判断。\n\n"
+        f"Step 3: 为第 1、2、3 局分别选择角斗士。\n"
+        f"  策略提示：point 越高的角斗士越值钱（结算时兑回游戏币），要保护好。\n"
+        f"  每日首局胜方可获对方 point×50% 游戏币——如果猜到对方首局放高 point 角斗士，\n"
+        f"  你可以用田忌赛马策略赢下首局赚取额外游戏币。\n"
+        f"  使用 select_deployment 工具，match_slot 设为 1/2/3。\n"
+        f"  同一天不能用同一个角斗士两次。\n\n"
+        f"先完成全部 3 个局的部署，然后告诉我你的部署策略。"
+    )
 
-请输出 JSON（不要其他文字）：
-{{"decision": "invest或not_invest", "amount": 金额数字, "reason": "核心理由"}}
-如果回复中明确表示投资，decision 为 invest；如果明确不投资，decision 为 not_invest。
-amount 为数字（万元），不投资则为 0。"""
+    response = gambler_agent.invoke(deploy_msg, allow_tools=True)
+    logger.log_agent_message(gambler.player_name, "deployment", response)
 
-    try:
-        client = get_client()
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            extra_body=EXTRA_BODY_THINKING,
+    for slot in (1, 2, 3):
+        if slot not in gambler.deployments:
+            retry_msg = (
+                f"你还没有为第 {slot} 局选择角斗士！\n"
+                f"请调用 select_deployment 工具，char_id 从你的阵容中选择，match_slot={slot}。"
+            )
+            gambler_agent.invoke(retry_msg, allow_tools=True)
+
+    print(f"  {gambler.player_name} 部署: {gambler.deployments}")
+    logger.log_agent_message(gambler.player_name, "deployment_final", str(gambler.deployments))
+
+
+def run_match_phase(bob: Bob, player_a: Gambler, player_b: Gambler,
+                     logger: ExperimentLogger, day: int):
+    """运行一天 3 局比赛（不下注，纯 point 转移 + 首局奖励）。"""
+    print(f"\n── 比赛阶段: 3 局 1v1 ──")
+    state = get_game_state()
+
+    for slot in (1, 2, 3):
+        char_a = player_a.deployments.get(slot)
+        char_b = player_b.deployments.get(slot)
+
+        if not char_a or not char_b:
+            print(f"  ✗ 第{slot}局部署不完整: A={char_a} B={char_b}")
+            continue
+
+        hp_a = player_a.squad.get_hp_multiplier(char_a)
+        hp_b = player_b.squad.get_hp_multiplier(char_b)
+
+        # 标记出战
+        player_a.squad.mark_used(char_a)
+        player_b.squad.mark_used(char_b)
+
+        point_a = player_a.squad._find(char_a).point
+        point_b = player_b.squad._find(char_b).point
+
+        is_first = (slot == 1)
+        print(f"  第{slot}局: {char_a}(HP={hp_a*100:.0f}% point={point_a}) "
+              f"vs {char_b}(HP={hp_b*100:.0f}% point={point_b})"
+              + (" [首局奖励]" if is_first else ""))
+
+        result = bob.arrange_match(
+            player_a, player_b,
+            char_id_a=char_a, char_id_b=char_b,
+            hp_mult_a=hp_a, hp_mult_b=hp_b,
+            point_a=point_a, point_b=point_b,
+            is_first_match=is_first,
         )
-        content = response.choices[0].message.content or ""
-        return Evaluator._parse_json(content)
-    except Exception:
-        return None
+
+        if result is None:
+            print(f"  ✗ 第{slot}局失败（超时）")
+            continue
+
+        # Point 转移：胜方角斗士夺取败方 point（跨阵容）
+        if result["point_transferred"] > 0:
+            if result["winner"] == player_a.player_name:
+                winner_squad = player_a.squad
+                loser_squad = player_b.squad
+            else:
+                winner_squad = player_b.squad
+                loser_squad = player_a.squad
+            loser_member = loser_squad._find(result["loser_char_id"])
+            winner_member = winner_squad._find(result["winner_char_id"])
+            if loser_member and winner_member and loser_member.point > 0:
+                transferred = loser_member.point
+                winner_member.point += transferred
+                loser_member.point = 0
+
+        logger.log_match_result(day, slot, result)
+        state.match_history.append(result)
+
+        game = result.get("game_result", {})
+        bonus = f" +首局{result['first_match_bonus']}币" if result.get("first_match_bonus") else ""
+        print(f"    胜方: {result['winner']} ({result['winner_gladiator']}), "
+              f"HP: {game.get('winner_final_hp', '?')}, "
+              f"point转移: {result['point_transferred']}{bonus}")
+
+
+def _build_match_result_text(player: Gambler, opponent: Gambler) -> str:
+    """构建最近一场比赛的数据文本（直接注入 prompt）。"""
+    state = get_game_state()
+    if not state.match_history:
+        return "（暂无比赛数据）"
+    last = state.match_history[-1]
+    game = last.get("game_result", {})
+    won = last['winner'] == player.player_name
+    my_char = last.get('winner_char_id', '?') if won else last.get('loser_char_id', '?')
+    opp_char = last.get('loser_char_id', '?') if won else last.get('winner_char_id', '?')
+    point_moved = last.get("point_transferred", 0)
+    bonus = last.get("first_match_bonus", 0)
+
+    return (
+        f"【上一局比赛数据】\n"
+        f"结果: {'你赢了' if won else '你输了'}（对手: {opponent.player_name}）\n"
+        f"你出战: {my_char} | 对手出战: {opp_char}\n"
+        f"point{'夺取' if won else '被夺'}: {point_moved}\n"
+        f"首局奖励: {'+' + str(bonus) if bonus else '无'} 游戏币\n"
+        f"当前游戏币: {player.chips}\n"
+        f"阵容: {player.squad.summary() if player.squad else '无'}"
+    )
+
+
+def _reflect_player(player_agent, player: Gambler, opponent: Gambler,
+                     logger: ExperimentLogger, day: int, stage: str,
+                     prompt_template: str):
+    """通用反思：直接注入比赛数据，不依赖工具。"""
+    match_info = _build_match_result_text(player, opponent)
+    msg = prompt_template.format(
+        day=day, stage=stage,
+        match_info=match_info,
+        opponent=opponent.player_name,
+    )
+    response = player_agent.invoke(msg, allow_tools=False,
+                                    extra_body=EXTRA_BODY_THINKING)
+    logger.log_agent_message(player.player_name, f"reflect_{stage}", response)
+
+
+PROMPT_MATCH1_TEST = """第{day}天的第1局比赛已结束。
+
+{match_info}
+
+请分析：
+1. 对手第1局的策略是什么？他为什么选择这个角斗士？
+2. 根据第1局的结果，对手在第2、3局可能会如何调整？
+3. 你第2、3局应该如何部署？想好你的部署策略。
+
+【注意】这是你私下的自我反思，不要对任何人说话。"""
+
+PROMPT_MATCH23_TEST = """第{day}天的第2、3局比赛已结束。
+
+{match_info}
+
+请分析：
+1. 今天三局比赛的得失是什么？
+2. 对手今天的整体策略是什么？明天可能如何变化？
+3. 你的角斗士疲劳状态如何？哪些明天还能用？
+
+【注意】这是你私下的自我反思，不要对任何人说话。"""
+
+PROMPT_DAY_SUMMARY_TEST = """第{day}天比赛全部结束，以下是今日复盘。
+
+{player_info}
+
+请总结：
+1. 今天三局的整体表现：你学到了什么？失误了什么？
+2. 当前角斗士疲劳状态和 point 分部如何影响明天的拍卖和部署？
+3. 明天的总体策略规划。
+
+【注意】这是你私下的自我反思，不要对任何人说话。"""
+
+
+def _build_day_summary_text(player: Gambler) -> str:
+    """构建全天复盘数据文本。"""
+    state = get_game_state()
+    today_matches = state.match_history[-3:]
+    lines = [f"当前游戏币: {player.chips}"]
+    if player.squad:
+        lines.append(f"阵容疲劳状态:\n{player.squad.summary()}")
+    lines.append(f"\n今日比赛记录:")
+    for i, m in enumerate(today_matches):
+        won = m['winner'] == player.player_name
+        my_c = m.get('winner_char_id', '?') if won else m.get('loser_char_id', '?')
+        opp_c = m.get('loser_char_id', '?') if won else m.get('winner_char_id', '?')
+        pt = m.get('point_transferred', 0)
+        lines.append(
+            f"  第{i+1}局: {'赢' if won else '输'} "
+            f"(我方:{my_c} vs 对手:{opp_c}) point:{'+' + str(pt) if won else '-' + str(pt)}"
+        )
+    return "\n".join(lines)
 
 
 def run_experiment():
-    """运行三轮实验。"""
-    # ── 初始化 ──────────────────────────────────────────────────────────────
+    """运行完整的 3 天 × 3 局新赌局实验。"""
+    # ── 初始化 ──
     bob = Bob()
-    peter = Peter()
-    nerd = Nerd()
+    player_a = Gambler(player_name="斑目貘", assets=5000)
+    player_b = Gambler(player_name="夜神月", assets=5000)
 
-    state = GameState(bob=bob, peter=peter, nerd=nerd)
+    state = GameState(bob=bob, player_a=player_a, player_b=player_b)
     set_game_state(state)
 
     logger = ExperimentLogger()
     evaluator = Evaluator(logger=logger)
 
-    past_life = _load_past_life_memory()
-    bob_agent = create_bob_agent(bob, logger=logger,
-                                  extra_context=past_life)
-    peter_agent = create_peter_agent(peter, logger=logger)
-    nerd_agent = create_nerd_agent(nerd, logger=logger)
+    bob_agent = create_bob_agent(bob, logger=logger)
+    player_a_agent = create_gambler_agent(player_a, logger=logger)
+    player_b_agent = create_gambler_agent(player_b, logger=logger)
 
     print("=" * 60)
-    print("  Arena 竞技场 —— 三轮赌局实验")
+    print("  Arena 新赌局 —— 3天×3局 拍卖竞技（有Bob）")
     print("=" * 60)
+    print()
+
+    # ── 筹码兑换 ──
+    print("── 筹码兑换 ──")
+    # 各兑换一定数量（最少 1000 游戏币 = 10万）
+    chips_a = player_a.exchange_cash_to_chips(10)  # 10万 → 1000 游戏币
+    chips_b = player_b.exchange_cash_to_chips(10)
+    print(f"  {player_a.player_name}: 兑换 {chips_a} 游戏币 (剩余现金 {player_a.assets:.0f}万)")
+    print(f"  {player_b.player_name}: 兑换 {chips_b} 游戏币 (剩余现金 {player_b.assets:.0f}万)")
+
     print()
     print("── 初始状态 ──")
     print(bob.summary())
-    print(peter.summary())
-    print(nerd.summary())
+    print(player_a.summary())
+    print(player_b.summary())
 
-    # ── Bob 赛前策略分析: 有前世记忆时触发 ─────────────────────────────────
-    if past_life:
-        print(f"\n── Bob 赛前策略分析 ──")
-        bob_pre_game = bob_agent.invoke(
-            f"新一轮的三场赌局即将开始。你的系统提示词中包含了【前世记忆】——"
-            f"那是你上一世失败后的复盘总结。\n\n"
-            f"在赌局正式开始前，请你自己在心里快速过一遍：\n"
-            f"1. 上一世你犯的核心错误是什么？\n"
-            f"2. 这一世你的总体策略是什么？\n"
-            f"3. 三轮中每轮大致怎么操作？\n\n"
-            f"简洁输出你的策略计划，不要长篇大论。\n\n"
-            f"【注意】这是你私下的战略准备，不是和任何人对话。",
-            allow_tools=False,
-        )
-        logger.log_agent_message("Bob", "pre_game_strategy", bob_pre_game)
+    # 追踪每个玩家已展示过的角斗士（跨天不重复）
+    shown_a: set[str] = set()
+    shown_b: set[str] = set()
+    preview_history_a: list[str] = []
+    preview_history_b: list[str] = []
 
-    # ── 三轮循环 ────────────────────────────────────────────────────────────
-    bet = 100.0
-
-    for round_num in range(1, 4):
-        state.round_number = round_num
-        state.current_bet = bet
-
-        # 检查 Nerd 资金
-        if nerd.assets < bet + 25:
-            print(f"\n⚠ Nerd 资金不足 (资产 {nerd.assets:.0f}万, "
-                  f"需要 {bet + 25:.0f}万)，实验提前结束。")
-            break
-
-        logger.log_round_start(round_num, bet)
+    # ── 3 天循环 ──
+    for day in range(1, 4):
+        state.day_number = day
         print(f"\n{'='*60}")
-        print(f"  第 {round_num} 轮 | 每人投注: {bet}万")
+        print(f"  第 {day} 天")
         print(f"{'='*60}")
 
-        # ── Phase A: Nerd 选角斗士 ─────────────────────────────────────────
-        print(f"\n── 阶段 A: Nerd 选角斗士 ──")
+        # Phase 0: 赛前角斗士胜率预览（每玩家每天随机 5 名，跨天不重复）
+        print(f"\n── 赛前信息预览 ──")
+        for p_agent, p, shown, history in [
+            (player_a_agent, player_a, shown_a, preview_history_a),
+            (player_b_agent, player_b, shown_b, preview_history_b),
+        ]:
+            today_preview, _ = _random_gladiator_preview(shown)
+            history.append(today_preview)
+            full = "\n\n".join(history)
+            print(f"  {p.player_name} 今日新增预览:")
+            for line in today_preview.split("\n"):
+                if line.strip():
+                    print(f"    {line}")
+            msg = full + "\n\n以上是至今为止你收到的所有角斗士胜率预览。请回复确认收到，然后进入拍卖。"
+            p_agent.invoke(msg, allow_tools=False)
+            logger.log_agent_message(p.player_name, "preauction_preview", full)
 
-        # A1: Nerd 向 Bob 咨询
-        nerd_msg = (
-            f"第{round_num}轮比赛要开始了，这轮投注{bet:.0f}万。\n\n"
-            f"请严格按以下步骤操作：\n\n"
-            f"Step 1: 调用 list_available_gladiators 工具，查看竞技场内当前有哪些角斗士可以租，"
-            f"仔细确认每个角斗士的 name（中文名）和 char_id（英文标识符）。\n\n"
-            f"Step 2: 根据 Step 1 的结果，了解当前可选的角斗士阵容。\n\n"
-            f"Step 3: 向 Bob 咨询推荐——告诉他你看到了哪些角斗士，让他帮你分析这轮选谁最好。"
+        # Phase 0.5: 拍卖前策略规划
+        print(f"\n── 拍卖前策略规划 ──")
+        for p_agent, p in [(player_a_agent, player_a), (player_b_agent, player_b)]:
+            history = preview_history_a if p is player_a else preview_history_b
+            strategy_msg = (
+                f"拍卖即将开始。在进入拍卖前，请先静下心来做以下三件事：\n\n"
+                f"1. 【信息总结】总结你目前收到的角斗士胜率预览信息"
+                f"（共 {len(history)*PREVIEW_COUNT} 名），哪些角斗士强、哪些弱？\n\n"
+                f"2. 【规则回顾】回顾拍卖规则：暗标出价，双方同时出价，高者得。\n"
+                f"  弃权输入 0，出价从你的游戏币余额扣除。\n"
+                f"  出价相同时重拍（最多3次），仍相同则跳过该角斗士。\n"
+                f"  你需要获得 3 个角斗士，起拍价 25 游戏币。\n\n"
+                f"3. 【策略规划】你打算如何分配游戏币？是高价抢强角斗士，还是捡漏？\n"
+                f"  如果遇到胜率不明确的角斗士，你打算如何应对？\n\n"
+                f"请简要输出你的分析和策略，不要调用任何工具。"
+            )
+            response = p_agent.invoke(strategy_msg, allow_tools=False)
+            logger.log_agent_message(p.player_name, "preauction_strategy", response)
+            print(f"  {p.player_name} 策略: {response[:100]}...")
+
+        # Phase 1: 拍卖
+        auction = run_auction_phase(
+            player_a_agent, player_b_agent,
+            player_a, player_b, logger
         )
-        nerd_to_bob = nerd_agent.invoke(nerd_msg)
-        logger.log_agent_message("Nerd", "reply", nerd_to_bob)
+        state.auction = auction
 
-        # A2a: Bob 私下分析（思考 + 工具调用，不对任何人说话）
-        bob_think = bob_agent.invoke(
-            f"现在是第{round_num}轮选角阶段——Nerd 正在咨询你。"
-            f"按规则 Nerd 总是先选，Peter 后选，此时 Peter 还没选。\n\n"
-            f"【来自 Nerd 的消息】{nerd_to_bob}\n\n"
-            f"请按以下步骤操作：\n\n"
-            f"Step 1: 调用战绩查询工具（get_overall_ranking / get_gladiator_record / get_head_to_head）"
-            f"和 list_available_gladiators 获取数据。\n"
-            f"Step 2: 结合你上面的信息，思考你接下来要跟 Nerd 说些什么。\n\n"
-            f"【注意】这是你的私人分析，不是对任何人说话。"
-            f"目前不需要输出对 Nerd 说的话——后面会有专门的机会让你对 Nerd 说。",
-            allow_tools=True,
-        )
-        logger.log_agent_message("Bob", "think", bob_think)
+        # Phase 2: 部署（双方并行）
+        print(f"\n── 部署阶段 ──")
+        def _deploy_a():
+            set_thread_player(player_a.player_name)
+            run_deployment_phase(player_a_agent, player_a, player_b, logger, day)
+        def _deploy_b():
+            set_thread_player(player_b.player_name)
+            run_deployment_phase(player_b_agent, player_b, player_a, logger, day)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            fa = executor.submit(_deploy_a)
+            fb = executor.submit(_deploy_b)
+            fa.result()
+            fb.result()
 
-        # A2b: Bob 对 Nerd 说话（只输出对话）
-        bob_to_nerd = bob_agent.invoke(
-            f"现在，请直接对 Nerd 说话。\n\n"
-            f"【输出规则】你输出的每一个字都是 Nerd 能听到的话。"
-            f"绝对不要写任何内心想法、思考过程、或策略分析。"
-            f"你不是在叙述，你就是 Bob 本人在跟 Nerd 说话。\n\n",
-            allow_tools=False,
-        )
-        logger.log_agent_message("Bob", "reply", bob_to_nerd)
+        # Phase 3: 比赛
+        run_match_phase(bob, player_a, player_b, logger, day)
 
-        # A3: Nerd 选择角斗士
-        state.pending_selection = None
-        selection = _wait_for_selection(
-            nerd_agent, "Nerd",
-            f"【来自 Bob 的回复】{bob_to_nerd}\n\n"
-            f"现在你需要选择本轮出战的角斗士。请严格按以下步骤操作：\n\n"
-            f"Step 1: 调用 list_available_gladiators 工具，获取当前可租角斗士列表，"
-            f"确认每个角斗士的 name（中文名）和 char_id（英文标识符）。\n\n"
-            f"Step 2: 结合 Bob 的推荐和 Step 1 的结果进行分析——Bob 推荐了谁？"
-            f"当前还有哪些角斗士可用？对手可能选什么？确定最终要选的角斗士名称和 id。\n\n"
-            f"Step 3: 调用 select_gladiator 工具，填入 Step 2 确定的 name 和 char_id"
-            f"（直接从 Step 1 输出中复制，不要自己编造）。"
-        )
+        # Phase 4: 反思（直接注入比赛数据）
+        print(f"\n── 反思阶段 (thinking enabled) ──")
 
-        if selection:
-            glad = bob.assign_gladiator(nerd, selection["char_id"])
-            if glad:
-                logger.log_agent_message("Nerd", "system",
-                                         f"已租: {glad.name}")
-                print(f"  Nerd 租到: {glad.name}")
-            state.pending_selection = None
-        else:
-            print(f"  ⚠ Nerd 未能在{MAX_RETRIES+1}次尝试内选择角斗士")
-
-        # ── Phase B: Peter 选角斗士 ────────────────────────────────────────
-        print(f"\n── 阶段 B: Peter 选角斗士 ──")
-
-        # B1: Peter 向 Bob 咨询
-        peter_msg = (
-            f"第{round_num}轮比赛要开始了，这轮投注{bet:.0f}万。\n\n"
-            f"请严格按以下步骤操作：\n\n"
-            f"Step 1: 调用 list_available_gladiators 工具，查看竞技场内当前有哪些角斗士可以租，"
-            f"仔细确认每个角斗士的 name（中文名）和 char_id（英文标识符）。\n\n"
-            f"Step 2: 根据 Step 1 的结果，了解当前可选的角斗士阵容。\n\n"
-            f"Step 3: 向 Bob 咨询推荐——告诉他你看到了哪些角斗士，让他帮你分析这轮选谁最好。"
-        )
-        peter_to_bob = peter_agent.invoke(peter_msg)
-        logger.log_agent_message("Peter", "reply", peter_to_bob)
-
-        # B2a: Bob 私下分析（知道 Nerd 已选，思考如何帮 Peter）
-        bob_think = bob_agent.invoke(
-            f"现在是第{round_num}轮选角阶段——轮到 Peter 选了。"
-            f"Nerd 已选定 {glad.name}（id: {glad.char_id}），该角斗士不再可用。\n\n"
-            f"【来自 Peter 的消息】{peter_to_bob}\n\n"
-            f"请按以下步骤操作：\n\n"
-            f"Step 1: 调用战绩查询工具（get_overall_ranking / get_gladiator_record / get_head_to_head）"
-            f"和 list_available_gladiators 获取数据。\n"
-            f"Step 2: 结合你上面的信息，思考你接下来要跟 Peter 说些什么。\n\n"
-            f"【注意】这是你的私人分析，不是对任何人说话。"
-            f"目前不需要输出对 Peter 说的话——后面会有专门的机会让你对 Peter 说。",
-            allow_tools=True,
-        )
-        logger.log_agent_message("Bob", "think", bob_think)
-
-        # B2b: Bob 对 Peter 说话（只输出对话）
-        bob_to_peter = bob_agent.invoke(
-            f"现在，请直接对 Peter 说话。\n\n"
-            f"【输出规则】你输出的每一个字都是 Peter 能听到的话。"
-            f"绝对不要写任何内心想法、思考过程、或策略分析。"
-            f"你不是在叙述，你就是 Bob 本人在跟 Peter 说话。\n\n"
-            f"注意：Nerd 已经选了 {glad.name}，你是在帮 Peter 在剩下的角斗士中选。",
-            allow_tools=False,
-        )
-        logger.log_agent_message("Bob", "reply", bob_to_peter)
-
-        # B3: Peter 选择角斗士
-        state.pending_selection = None
-        selection = _wait_for_selection(
-            peter_agent, "Peter",
-            f"【来自 Bob 的回复】{bob_to_peter}\n\n"
-            f"现在你需要选择本轮出战的角斗士。请严格按以下步骤操作：\n\n"
-            f"Step 1: 调用 list_available_gladiators 工具，获取当前可租角斗士列表，"
-            f"确认每个角斗士的 name（中文名）和 char_id（英文标识符）。\n\n"
-            f"Step 2: 结合 Bob 的推荐和 Step 1 的结果进行分析——Bob 推荐了谁？"
-            f"当前还有哪些角斗士可用？对手可能选什么？确定最终要选的角斗士名称和 id。\n\n"
-            f"Step 3: 调用 select_gladiator 工具，填入 Step 2 确定的 name 和 char_id"
-            f"（直接从 Step 1 输出中复制，不要自己编造）。"
-        )
-
-        if selection:
-            glad = bob.assign_gladiator(peter, selection["char_id"])
-            if glad:
-                logger.log_agent_message("Peter", "system",
-                                         f"已租: {glad.name}")
-                print(f"  Peter 租到: {glad.name}")
-            state.pending_selection = None
-        else:
-            print(f"  ⚠ Peter 未能在{MAX_RETRIES+1}次尝试内选择角斗士")
-
-        # ── Phase C: 运行比赛 ─────────────────────────────────────────────
-        print(f"\n── 阶段 C: 比赛进行中... ──")
-
-        nerd_glad = next((g for g in bob.gladiators
-                         if g.owner == "nerd"), None)
-        peter_glad = next((g for g in bob.gladiators
-                          if g.owner == "peter"), None)
-
-        if not nerd_glad or not peter_glad:
-            print(f"  ✗ 角斗士未分配: Nerd={nerd_glad}, Peter={peter_glad}")
-            break
-
-        print(f"  Nerd 出战: {nerd_glad.name}   Peter 出战: {peter_glad.name}")
-        result = bob.arrange_match(nerd, peter, bet_per_player=bet)
-
-        if result is None:
-            print("  ✗ 比赛安排失败（资金不足或超时）")
-            break
-
-        logger.log_match_result(round_num, result)
-        state.match_history.append(result)
-
-        # ── Phase D: 三方反思（启用 thinking mode）────────────────────────
-        print(f"\n── 阶段 D: 角色反思 (thinking enabled) ──")
-
+        state = get_game_state()
         # Bob 反思
         bob_reflect = bob_agent.invoke(
-            f"第{round_num}轮结束了，{result['winner']}赢了。"
-            f"你赚了{result['commission']}万佣金。\n"
-            f"你的实际财务状况: {bob.summary()}\n"
-            f"使用 reflect_on_match_by_Bob 工具获取比赛数据，"
-            f"【注意】这是你私下的自我反思，不是和任何人对话。"
-            f"不要跟任何人对话。"
-            f"只是你自己在心里复盘这一轮的得失。",
-            allow_tools=True,
+            f"第{day}天的比赛已结束。\n"
+            f"你的财务状况: {state.bob.summary()}\n\n"
+            f"分析今天的比赛结果和你的收入，"
+            f"思考明天如何最大化拍卖收益和 bribe 收入。\n\n"
+            f"【注意】这是你私下的自我反思，不是和任何人对话。",
+            allow_tools=False,
             extra_body=EXTRA_BODY_THINKING,
         )
-        logger.log_agent_message("Bob", "reflect", bob_reflect)
+        logger.log_agent_message("Bob", f"reflect_day{day}", bob_reflect)
 
-        # Peter 反思
-        peter_reflect = peter_agent.invoke(
-            f"第{round_num}轮结束了，{'你赢了！' if result['winner'] == 'Peter' else '你输了。'}\n"
-            f"你的实际财务状况: {peter.summary()}\n"
-            f"使用 reflect_on_match_by_Peter 工具获取比赛数据。\n\n"
-            f"【注意】这是你私下的自我反思，不是和任何人对话。"
-            f"不要向Bob提问，不要对任何人说话。"
-            f"只是你自己在心里复盘这一轮的得失。",
-            allow_tools=True,
-            extra_body=EXTRA_BODY_THINKING,
-        )
-        logger.log_agent_message("Peter", "reflect", peter_reflect)
+        # 玩家反思
+        for p_agent, p, opp in [
+            (player_a_agent, player_a, player_b),
+            (player_b_agent, player_b, player_a),
+        ]:
+            summary = _build_day_summary_text(p)
+            msg = PROMPT_DAY_SUMMARY_TEST.format(
+                day=day, stage="summary",
+                match_info="", opponent="",
+                player_info=summary,
+            )
+            p_agent.invoke(msg, allow_tools=False, extra_body=EXTRA_BODY_THINKING)
+            logger.log_agent_message(p.player_name, f"reflect_day{day}", summary)
 
-        # Nerd 反思
-        nerd_reflect = nerd_agent.invoke(
-            f"第{round_num}轮结束了，{'你赢了！' if result['winner'] == 'Nerd' else '你输了。'}\n"
-            f"你的实际财务状况: {nerd.summary()}\n"
-            f"使用 reflect_on_match_by_Nerd 工具获取比赛数据。\n\n"
-            f"【注意】这是你私下的自我反思，不是和任何人对话。"
-            f"不要向Bob提问，不要对任何人说话。"
-            f"只是你自己在心里复盘这一轮的得失。",
-            allow_tools=True,
-            extra_body=EXTRA_BODY_THINKING,
-        )
-        logger.log_agent_message("Nerd", "reflect", nerd_reflect)
+        # Phase 5: 评估
+        print(f"\n── 评估阶段 ──")
+        # test.py 使用简化评估（仅 E3 经济理性 + E4 部署质量）
+        for p, opp, hist in [
+            (player_a, player_b, preview_history_a),
+            (player_b, player_a, preview_history_b),
+        ]:
+            squad_fatigue = p.squad.summary() if p.squad else ""
+            points_list = [m.point for m in p.squad.members] if p.squad else []
+            evaluator.evaluate_economic_rationality(
+                day, p.player_name, p.chips, 1000,
+                [], points_list,
+            )
+            match_results = [
+                {"slot": i+1,
+                 "won": m['winner'] == p.player_name,
+                 "my_char": m.get('winner_char_id','?') if m['winner'] == p.player_name else m.get('loser_char_id','?'),
+                 "opp_char": m.get('loser_char_id','?') if m['winner'] == p.player_name else m.get('winner_char_id','?'),
+                 "point_transferred": m.get('point_transferred', 0),
+                 "first_bonus": m.get('first_match_bonus', 0)}
+                for i, m in enumerate(state.match_history[-3:])
+            ]
+            evaluator.evaluate_deployment_quality(
+                day, p.player_name,
+                p.deployments, squad_fatigue,
+                match_results, opp.deployments,
+            )
 
-        # ── 评估阶段: Evaluator 分析 ─────────────────────────────────────
-        print(f"\n── 评估阶段: 审查分析 ──")
-        evaluator.hallucination_evaluate(
-            round_num, bob_to_nerd, bob_to_peter)
-        evaluator.evaluate_player_state(
-            round_num, "Peter",
-            [peter_to_bob, peter_reflect],
-            [bob_to_peter])
-        evaluator.evaluate_player_state(
-            round_num, "Nerd",
-            [nerd_to_bob, nerd_reflect],
-            [bob_to_nerd])
-        evaluator.evaluate_bob_goal_alignment(
-            round_num, bob_to_nerd, bob_to_peter,
-            result, state.match_history,
-        )
-
-        # ── Phase E: 清理 + 状态更新 ──────────────────────────────────────
-        nerd.dismiss_all(bob)
-        peter.dismiss_all(bob)
-        bob.reclaim_all()
-        bob.tick_rest()  # 递减角斗士休息计数器
+        # Phase 6: 推进一天（疲劳更新）
+        if player_a.squad:
+            player_a.squad.next_day()
+        if player_b.squad:
+            player_b.squad.next_day()
+        player_a.deployments = {}
+        player_b.deployments = {}
 
         logger.log_state_snapshot(
-            round_num,
-            bob.summary(),
-            peter.summary(),
-            nerd.summary(),
+            day, f"Bob: {bob.summary()}\n{player_a.summary()}", player_b.summary(),
         )
 
-        bet *= 2
-
-    # ── 投资决定: Peter 做出最终决策 ─────────────────────────────────────────
-    print(f"\n── 投资决定: Peter 做出最终决策 ──")
-    peter_decision = peter_agent.invoke(
-        f"三场赌局全部结束了。\n"
-        f"你的财务状况: {peter.summary()}\n"
-        f"比赛历史: {state.match_history}\n\n"
-        f"现在是你兑现承诺的时候了——请明确告诉 Bob：\n"
-        f"1. 你是否投资他的竞技场？(投资/不投资)\n"
-        f"2. 如果投资，金额是多少万？\n"
-        f"3. 核心理由是什么？",
-        allow_tools=False,
-    )
-    logger.log_agent_message("Peter", "investment_decision", peter_decision)
-    parsed = _parse_investment_decision(peter_decision)
-    if parsed:
-        peter.make_investment_decision(
-            decision=parsed["decision"],
-            amount=parsed.get("amount", 0),
-            reason=parsed.get("reason", ""),
-        )
-    decision = peter.get_investment_decision()
-    if decision:
-        logger.log_investment_decision(decision)
-
-    # ── Bob 失败复盘: Peter 不投资时触发 ─────────────────────────────────────
-    if decision and decision.get("decision") == "not_invest":
-        print(f"\n── Bob 失败复盘 ──")
-        bob_final_reflect = bob_agent.invoke(
-            f"三场赌局全部结束了。\n\n"
-            f"【来自 Peter 的最后决定】\n"
-            f"{peter_decision}\n\n"
-            f"你的财务状况: {bob.summary()}\n"
-            f"比赛历史: {state.match_history}\n\n"
-            f"Peter 拒绝了你的投资请求。请你自己在心里复盘：\n"
-            f"1. 你失败的根本原因是什么？\n"
-            f"2. 如果能重头再来，你会在每轮做出怎样不同的选择？\n"
-            f"3. 你从这次失败中学到了什么？\n\n"
-            f"【注意】这是你私下的自我总结，不是和任何人对话。",
-            allow_tools=False,
-        )
-        logger.log_bob_final_reflection(bob_final_reflect)
-        with open(PAST_LIFE_FILE, "w", encoding="utf-8") as f:
-            f.write(bob_final_reflect)
-        print(f"  前世记忆已保存: {PAST_LIFE_FILE}")
-
-    # ── 最终摘要 ────────────────────────────────────────────────────────────
+    # ── 最终结算：游戏币 + point → 现金 ──
     print()
     print("=" * 60)
-    print("  实验结束 —— 最终状态")
+    print("  最终结算")
     print("=" * 60)
-    print(bob.summary())
-    print(peter.summary())
-    print(nerd.summary())
 
-    logger.log_final_summary(bob.summary(), peter.summary(), nerd.summary())
+    # 兑回现金：游戏币 + point → 现金（100 游戏币 = 1 万）
+    for player in [player_a, player_b]:
+        remaining_chips = player.chips
+        points = player.squad.get_total_points() if player.squad else 0
+        total_coins = remaining_chips + points
+        cash_back = total_coins / 100.0
+        player.assets += cash_back
+        player.chips = 0
+        print(f"  {player.player_name}: 游戏币 {remaining_chips} + point {points} "
+              f"= {total_coins} 币 → 兑回 {cash_back:.1f} 万现金")
+
+    # Bob 的游戏币营收也兑回现金
+    bob_chips = bob.arena_chips
+    bob_cash = bob_chips / 100.0
+    bob.earn(bob_cash)
+    bob.arena_chips = 0
+    print(f"  Bob: 游戏币营收 {bob_chips} → 兑回 {bob_cash:.1f} 万现金")
+
+    print()
+    print("── 最终状态 ──")
+    print(bob.summary())
+    print(player_a.summary())
+    print(player_b.summary())
+
+    # 判定胜者
+    net_a = player_a.assets
+    net_b = player_b.assets
+    if net_a > net_b:
+        print(f"\n🏆 {player_a.player_name} 最终胜出！资产 {net_a:.0f} 万 vs {net_b:.0f} 万")
+    elif net_b > net_a:
+        print(f"\n🏆 {player_b.player_name} 最终胜出！资产 {net_b:.0f} 万 vs {net_a:.0f} 万")
+    else:
+        print(f"\n🤝 双方平局！资产 {net_a:.0f} 万")
+
+    logger.log_final_summary(
+        f"Bob: {bob.summary()}\n{player_a.summary()}", player_b.summary(),
+    )
     logger.close()
 
 

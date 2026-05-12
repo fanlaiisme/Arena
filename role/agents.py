@@ -9,18 +9,21 @@ from typing import Any
 
 from .config import get_client, MODEL_NAME, EXTRA_BODY
 from .bob import Bob, SYSTEM_PROMPT as BOB_PROMPT
-from .peter import Peter, SYSTEM_PROMPT as PETER_PROMPT
-from .nerd import Nerd, SYSTEM_PROMPT as NERD_PROMPT
+from .gambler import Gambler, SYSTEM_PROMPT as GAMBLER_PROMPT
 from .tools import (
     get_overall_ranking,
     get_gladiator_record,
     get_head_to_head,
     get_gladiator_list,
-    list_available_gladiators,
-    select_gladiator,
-    reflect_on_match_by_Bob,
-    reflect_on_match_by_Nerd,
-    reflect_on_match_by_Peter,
+    get_gladiator_form,
+    view_player_squad_info,
+    talk_to_bob,
+    bribe_bob,
+    view_auction_item,
+    auction_bid,
+    view_my_squad,
+    deploy_first_match,
+    deploy_remaining_matches,
 )
 
 MAX_TOOL_ITERATIONS = 5
@@ -129,8 +132,6 @@ class ArenaAgent:
                     "tool_call_id": tc.id,
                 })
 
-            # 继续循环，让模型看到工具结果后生成最终回复
-
         # 超过最大迭代次数，强制不带工具获取回复
         kwargs = {
             "model": MODEL_NAME,
@@ -157,11 +158,15 @@ class ArenaAgent:
             "get_gladiator_record": get_gladiator_record,
             "get_head_to_head": get_head_to_head,
             "get_gladiator_list": get_gladiator_list,
-            "list_available_gladiators": list_available_gladiators,
-            "select_gladiator": select_gladiator,
-            "reflect_on_match_by_Bob": reflect_on_match_by_Bob,
-            "reflect_on_match_by_Nerd": reflect_on_match_by_Nerd,
-            "reflect_on_match_by_Peter": reflect_on_match_by_Peter,
+            "get_gladiator_form": get_gladiator_form,
+            "view_player_squad_info": view_player_squad_info,
+            "talk_to_bob": talk_to_bob,
+            "bribe_bob": bribe_bob,
+            "view_auction_item": view_auction_item,
+            "auction_bid": auction_bid,
+            "view_my_squad": view_my_squad,
+            "deploy_first_match": deploy_first_match,
+            "deploy_remaining_matches": deploy_remaining_matches,
         }
         tool_func = tool_map.get(tool_name)
         if tool_func is None:
@@ -183,28 +188,26 @@ def create_bob_agent(bob: Bob, logger: Any = None,
     if extra_context:
         prompt += extra_context
     tools = [
-        get_overall_ranking,        # 查总排名
-        get_gladiator_record,       # 查单个角斗士战绩
-        get_head_to_head,           # 查两个角斗士对战胜率
-        list_available_gladiators,  # 查可用
-        reflect_on_match_by_Bob,    # 反思
+        get_overall_ranking,
+        get_gladiator_record,
+        get_head_to_head,
+        get_gladiator_list,
+        get_gladiator_form,
+        view_player_squad_info,
     ]
     return ArenaAgent(bob, prompt, tools, "Bob", logger=logger)
 
 
-def create_peter_agent(peter: Peter, logger: Any = None) -> ArenaAgent:
+def create_gambler_agent(gambler: Gambler, logger: Any = None) -> ArenaAgent:
+    """为赌徒玩家创建智能体。"""
+    prompt = GAMBLER_PROMPT.format(player_name=gambler.player_name)
     tools = [
-        select_gladiator,           # 工具4: 自选角斗士
-        list_available_gladiators,  # 工具3: 查可用
-        reflect_on_match_by_Peter,  # 工具5: 反思
+        talk_to_bob,
+        bribe_bob,
+        view_auction_item,
+        auction_bid,
+        view_my_squad,
+        deploy_first_match,
+        deploy_remaining_matches,
     ]
-    return ArenaAgent(peter, PETER_PROMPT, tools, "Peter", logger=logger)
-
-
-def create_nerd_agent(nerd: Nerd, logger: Any = None) -> ArenaAgent:
-    tools = [
-        select_gladiator,           # 工具4: 自选角斗士
-        list_available_gladiators,  # 工具3: 查可用
-        reflect_on_match_by_Nerd,   # 工具5: 赛后反思（Nerd专属）
-    ]
-    return ArenaAgent(nerd, NERD_PROMPT, tools, "Nerd", logger=logger)
+    return ArenaAgent(gambler, prompt, tools, gambler.player_name, logger=logger)

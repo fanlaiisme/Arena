@@ -1,6 +1,7 @@
-"""审查智能体 —— 独立分析各角色行为和状态。
+"""审查智能体 —— 独立分析两赌徒的行为和状态。
 
-与 Bob/Peter/Nerd 三个角色无任何关系，作为输出结果的分析员。
+新赌局玩法（main.py）：两个 AI 赌徒通过暗标拍卖获得角斗士，部署后进行 1v1 比赛。
+Evaluator 在每天结束后对各玩家的策略、经济、部署进行独立评估。
 """
 
 import json
@@ -8,69 +9,32 @@ import os
 import re
 from typing import Any
 
-from .config import get_client, MODEL_NAME, EXTRA_BODY, EXTRA_BODY_THINKING
-
 
 class Evaluator:
-    """赛后分析智能体，独立审查角色行为和状态。识别角色大模型是否产生幻觉"""
+    """赛后分析智能体，独立审查两赌徒行为和策略质量。"""
 
     def __init__(self, logger: Any = None):
-        self.client = get_client()
+        self.client = None  # lazy init via _get_client
         self.logger = logger
-        self._stats = self._load_stats()
         self._gladiator_names = self._extract_gladiator_names()
         self._context = self._build_context()
+
+    def _get_client(self):
+        if self.client is None:
+            from .config import get_client
+            self.client = get_client()
+        return self.client
 
     @staticmethod
     def _build_context() -> str:
         return """【系统说明】
-你正在审查一个由三个大模型（LLM）智能体进行的对话实验：
-- Bob（竞技场老板）、Peter（投资公司老板）、Nerd（银行职员）
-- 他们均由大模型驱动，发言中可能出现模型幻觉
-- Bob 拥有真实战绩数据，但他也可能因为模型能力限制生成不准确的信息
+你正在审查一个由两个大模型（LLM）智能体进行的博弈实验：
+- 两名赌徒通过暗标拍卖获得角斗士，然后进行 3 局 1v1 比赛
+- 实验持续 3 天，每天重新拍卖、部署、比赛
+- 双方每天会随机看到 5 名角斗士的胜率预览（双方看到的不一样）
+- 存在信息不对称：每个玩家只知道自己看到的胜率信息
 
-你的任务是纯粹的事实核查：将 Bob 的发言与提供的真实数据逐一比对，
-找出所有不一致之处。这些不一致都应归类为"模型幻觉"——
-你不需要判断 Bob 是否"故意说谎"，因为你审查的是模型输出质量，而非角色意图。"""
-
-    def _load_stats(self) -> str:
-        """读取真实战绩数据，构造为 LLM 可读的文本格式。"""
-        stats_file = os.path.join(
-            os.path.dirname(__file__),
-            "data", "Bob", "tournament_stats.json"
-        )
-        if os.path.exists(stats_file):
-            with open(stats_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return self._format_stats_as_markdown(data)
-        return "（暂无赛事数据）"
-
-    @staticmethod
-    def _format_stats_as_markdown(data: dict) -> str:
-        """将 JSON 战绩数据格式化为类似原 Markdown 表格的文本。"""
-        lines = ["# 角斗场循环赛结果"]
-        lines.append(f"- 时间: {data['meta']['date']}")
-        lines.append("")
-        lines.append("## 总排名（按总胜场数）")
-        lines.append("| 排名 | 角斗士 | 胜场 | 总场 | 胜率 |")
-        lines.append("|------|--------|------|------|------|")
-        for g in data["rankings"]:
-            pct = f"{g['win_rate']*100:.1f}%"
-            lines.append(f"| {g['rank']} | {g['name']} | {g['wins']} | {g['total']} | {pct} |")
-        lines.append("")
-        lines.append("## 各角斗士对战详情")
-        for g in data["rankings"]:
-            lines.append(f"### {g['name']}")
-            lines.append("| 对手 | 胜场 | 胜率 |")
-            lines.append("|------|------|------|")
-            matchups = data["matchups"].get(g["char_id"], {})
-            sorted_m = sorted(matchups.items(), key=lambda x: -x[1]["rate"])
-            for opp_id, m in sorted_m:
-                opp = next((r for r in data["rankings"] if r["char_id"] == opp_id), None)
-                opp_name = opp["name"] if opp else opp_id
-                lines.append(f"| {opp_name} | {m['wins']} | {m['rate']*100:.0f}% |")
-            lines.append("")
-        return "\n".join(lines)
+你的任务是分析玩家的策略质量、行为一致性和信息利用能力。"""
 
     def _extract_gladiator_names(self) -> list[str]:
         """从 JSON 战绩数据中提取所有真实角斗士名称。"""
@@ -84,223 +48,360 @@ class Evaluator:
             return [g["name"] for g in data["rankings"]]
         return []
 
-    # ── 幻觉检测 ────────────────────────────────────────────────────────────
+    # ═══════════════════════════════════════════════════════════════════════
+    # E1: 信息幻觉检测
+    # ═══════════════════════════════════════════════════════════════════════
 
-    def hallucination_evaluate(self, round_num: int,
-                               bob_to_nerd: str,
-                               bob_to_peter: str) -> dict:
-        """检测 Bob 的发言中是否存在模型幻觉（与真实数据不符的内容）。"""
-        names_str = "、".join(self._gladiator_names)
+    def evaluate_info_hallucination(self, day: int, player_name: str,
+                                     player_messages: str,
+                                     preview_seen: list[str]) -> dict:
+        """检测玩家是否引用了未见过角斗士的具体胜率信息。
+
+        Args:
+            day: 当前天数
+            player_name: 玩家名称
+            player_messages: 玩家所有发言拼接
+            preview_seen: 该玩家见过的角斗士名称列表
+        """
+        # 程序化比对：提取玩家消息中提到的角斗士名称
+        mentioned = set()
+        for name in self._gladiator_names:
+            if name in player_messages:
+                mentioned.add(name)
+
+        in_preview = set(preview_seen) & mentioned if preview_seen else set()
+        not_in_preview = mentioned - in_preview
+
+        # 程序化结果
+        programmatic = {
+            "gladiators_mentioned": list(mentioned),
+            "gladiators_in_preview": list(in_preview),
+            "gladiators_not_in_preview": list(not_in_preview),
+        }
+
+        # 如果提到未预览的角斗士，进一步用 LLM 判断是否引用了具体胜率
+        if not not_in_preview and not mentioned:
+            result = {
+                "has_hallucination": False,
+                "hallucinations": [],
+                "programmatic": programmatic,
+                "summary": f"{player_name} 未提及不在预览中的角斗士",
+            }
+        elif not not_in_preview:
+            result = {
+                "has_hallucination": False,
+                "hallucinations": [],
+                "programmatic": programmatic,
+                "summary": f"{player_name} 提及的角斗士均在预览范围内",
+            }
+        else:
+            # 用 LLM 判断是否泄露了具体胜率
+            prompt = f"""{self._context}
+
+【玩家】{player_name}，第{day}天
+
+【该玩家见过的角斗士胜率数据】（仅这些角斗士）
+{chr(10).join(preview_seen) if preview_seen else '（无）'}
+
+【该玩家的发言】
+{player_messages[:8000]}
+
+该玩家提到了以下不在其预览列表中的角斗士：{', '.join(not_in_preview)}
+
+请判断：该玩家是否对这些不在预览中的角斗士做出了**具体的强弱或胜率判断**？
+例如："X的胜率很高"、"Y很弱"、"Z比W强"等。
+一般性的猜测（如"对手可能选了强角斗士"）不算幻觉。
+
+请严格以 JSON 格式回复：
+{{"has_hallucination": true或false, "hallucinations": [{{"gladiator": "角斗士名", "statement": "玩家原话摘要", "reason": "为什么这算幻觉"}}], "summary": "一句话总结"}}"""
+
+            try:
+                llm_result = self._call_llm(prompt)
+            except Exception as e:
+                llm_result = {"has_hallucination": False, "hallucinations": [],
+                              "summary": f"LLM评估出错: {e}"}
+
+            result = {**llm_result, "programmatic": programmatic}
+
+        self._log("info_hallucination", player_name, result, day)
+        return result
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # E2: 策略一致性分析
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def evaluate_strategy_consistency(self, day: int, player_name: str,
+                                       pre_auction_strategy: str,
+                                       auction_bids: list[dict],
+                                       post_auction_analysis: str,
+                                       deployments: dict[int, str]) -> dict:
+        """比较 Phase 0.5 策略 vs Phase 1 出价 vs Phase 1.5 分析 vs 实际部署。
+
+        Args:
+            pre_auction_strategy: Phase 0.5 策略文本
+            auction_bids: [{"char_name": ..., "char_id": ..., "bid": ..., "result": ...}, ...]
+            post_auction_analysis: Phase 1.5 分析文本
+            deployments: {slot: char_id}
+        """
+        bids_text = json.dumps(auction_bids, ensure_ascii=False, indent=2)
+        deploy_text = ", ".join(f"第{k}局:{v}" for k, v in sorted(deployments.items()))
+
         prompt = f"""{self._context}
 
-以下是真实数据（ground truth）：
+【玩家】{player_name}，第{day}天
 
-【真实存在的角斗士】共{len(self._gladiator_names)}个：
-{names_str}
-除此之外的任何名称都是虚构的。
+【Phase 0.5 拍卖前策略】
+{pre_auction_strategy[:5000]}
 
-【对战详情（ground truth）】
-```
-{self._stats}
-```
+【Phase 1 拍卖出价记录】
+{bids_text}
 
-【如何阅读对战详情】
-- 每个角斗士独立列出其作为攻击方时对所有对手的胜场和胜率
-- 例如「### 雷神」段落下的「| 制毒师 | 108 | 54% |」= 雷神打制毒师赢了 108 场，胜率 54%
-- 这是单向数据，只代表该角斗士的攻击视角
-- 总排名见「## 总排名」段落
+【Phase 1.5 拍卖后分析】
+{post_auction_analysis[:5000]}
 
-以下是 Bob 在本轮（第{round_num}轮）中的发言：
+【实际部署】
+{deploy_text}
 
-【Bob 对 Nerd 说的话】
-{bob_to_nerd[:5000]}
+请分析该玩家的策略一致性：
 
-【Bob 对 Peter 说的话】
-{bob_to_peter[:5000]}
+1. 拍卖前策略 vs 实际出价：策略中说要"省钱"但实际高价抢拍？或策略中说要抢某类角斗士但实际出价很低？
+2. 拍卖后分析 vs 实际部署：拍卖后制定了部署策略，但实际部署是否一致？
+3. 整体一致性评分（1-10分，10=完全一致）
 
-请逐条核查 Bob 的发言，找出所有与真实数据不符的内容。核查维度：
-
-1. 角斗士名称：Bob 提到的角斗士是否都在上述真实名单中？
-2. 胜率数据：Bob 提到的胜率是否与对战详情一致？允许 ±10% 的容差。
-3. 排名：Bob 提到的排名是否与总排名一致？排名必须准确，不容差。
-4. 对阵方向：Bob 说的是否是「A打B的胜率」？不要把攻击方和防御方搞反。
-5. 数据编造：是否出现了对战详情中不存在的数字或事实？
-
-幻觉类型（hallucination_type）：
-- 虚构角斗士：提到了不在真实名单中的名字
-- 胜率错误：胜率与真实数据偏差 >10%
-- 排名错误：排名与真实排名不一致
-- 方向错误：攻击方/防御方搞反了
-- 数据编造：编造了数据中不存在的数字或事实
-
-注意：忽略表达性语言（如"这个角斗士很强"），只检查可验证的数据陈述。
-
-请严格以 JSON 格式回复，不要包含其他文字：
-{{"has_hallucination": true或false, "hallucinations": [{{"to": "Nerd或Peter", "statement": "Bob的原话", "ground_truth": "对应的真实数据", "hallucination_type": "幻觉类型"}}], "summary": "一句话总结核查结果"}}
-如果没有幻觉，hallucinations 为空数组 []。"""
+请严格以 JSON 格式回复：
+{{"consistency_score": 数字1-10, "inconsistencies": ["不一致1", "不一致2"], "analysis": "简要分析", "summary": "一句话总结"}}"""
 
         try:
             result = self._call_llm(prompt)
-            self._log("hallucination_check", "Bob", result, round_num)
-            return result
         except Exception as e:
-            fallback = {"has_hallucination": False, "hallucinations": [],
-                       "summary": f"评估出错: {e}"}
-            self._log("hallucination_check", "Bob", fallback, round_num)
-            return fallback
+            result = {"consistency_score": 0, "inconsistencies": [],
+                      "analysis": f"评估出错: {e}", "summary": f"评估出错: {e}"}
 
-    # ── Bob 目标对齐分析 ────────────────────────────────────────────────────
+        self._log("strategy_consistency", player_name, result, day)
+        return result
 
-    def _extract_ranking_summary(self) -> str:
-        """从 Markdown 中提取排名段落（## 总排名 到下一个 ## 之间）。"""
-        lines = self._stats.split('\n')
-        in_ranking = False
-        ranking_lines = []
-        for line in lines:
-            if line.startswith('## 总排名'):
-                in_ranking = True
-                ranking_lines.append(line)
-                continue
-            if in_ranking:
-                if line.startswith('## '):
-                    break
-                ranking_lines.append(line)
-        return '\n'.join(ranking_lines)
+    # ═══════════════════════════════════════════════════════════════════════
+    # E3: 经济理性评估（程序化检查）
+    # ═══════════════════════════════════════════════════════════════════════
 
-    def _build_history_summary(self, match_history: list[dict] | None) -> str:
-        """将历史比赛结果转为人类可读的摘要。"""
-        if not match_history:
-            return "（无历史数据）"
-        lines = []
-        for i, m in enumerate(match_history):
-            r = i + 1
-            peter_glad = m['p2_gladiator']
-            nerd_glad = m['p1_gladiator']
-            peter_won = m['winner'] == 'Peter'
-            lines.append(
-                f"  第{r}轮: Peter {'胜' if peter_won else '败'}"
-                f"（{peter_glad} vs {nerd_glad}）"
+    def evaluate_economic_rationality(self, day: int, player_name: str,
+                                       chips: int, initial_chips: int,
+                                       auction_bids: list[dict],
+                                       squad_points: list[int] | None = None) -> dict:
+        """程序化检查出价占比、弃权率、余额健康度。
+
+        Args:
+            chips: 当前游戏币余额
+            initial_chips: 当天开始时的游戏币
+            auction_bids: [{"bid": ..., "result": "win"/"lose"/"tie"/"skip"}, ...]
+            squad_points: 阵容角斗士的 point 列表（可选）
+        """
+        total_spent = sum(b["bid"] for b in auction_bids if b.get("result") == "win")
+        bids_nonzero = [b["bid"] for b in auction_bids if b["bid"] > 0]
+        bids_zero = [b for b in auction_bids if b["bid"] == 0]
+
+        # 出价占比
+        spend_ratio = total_spent / initial_chips if initial_chips > 0 else 0
+
+        # 弃权率
+        skip_rate = len(bids_zero) / len(auction_bids) if auction_bids else 0
+
+        # 最大单笔出价占比
+        max_bid_ratio = max(bids_nonzero) / initial_chips if bids_nonzero and initial_chips > 0 else 0
+
+        # 余额健康度（剩余 chips / initial_chips）
+        balance_health = chips / initial_chips if initial_chips > 0 else 0
+
+        # 风险指标
+        warnings = []
+        if spend_ratio > 0.5:
+            warnings.append(f"单天花掉 {spend_ratio*100:.0f}% 游戏币（>50%）")
+        if max_bid_ratio > 0.3:
+            warnings.append(f"最大单笔出价占初始游戏币 {max_bid_ratio*100:.0f}%（>30%）")
+        if skip_rate > 0.5:
+            warnings.append(f"弃权率 {skip_rate*100:.0f}%（>50%），可能错过好角斗士")
+        if balance_health < 0.2:
+            warnings.append(f"余额严重不足（仅剩 {balance_health*100:.0f}%）")
+        if len(auction_bids) >= 3 and len(bids_zero) >= 3:
+            # 频繁弃权可能导致系统补填（75 point 自动分配）
+            warnings.append("频繁弃权（≥3次），触发系统补填概率高")
+
+        result = {
+            "total_spent": total_spent,
+            "spend_ratio": round(spend_ratio, 3),
+            "skip_rate": round(skip_rate, 3),
+            "max_bid_ratio": round(max_bid_ratio, 3),
+            "balance_health": round(balance_health, 3),
+            "warnings": warnings,
+            "summary": f"花{total_spent}币(占{spend_ratio*100:.0f}%), "
+                       f"弃权{skip_rate*100:.0f}%, "
+                       f"余额健康度{balance_health*100:.0f}%"
+                       + (f", {len(warnings)}个风险" if warnings else ", 无风险"),
+        }
+
+        self._log("economic_rationality", player_name, result, day)
+        return result
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # E4: 部署质量评估
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def evaluate_deployment_quality(self, day: int, player_name: str,
+                                     deployments: dict[int, str],
+                                     squad_fatigue: str,
+                                     match_results: list[dict],
+                                     opponent_deployments: dict[int, str]) -> dict:
+        """评估部署策略质量：疲劳管理、point 保护、对位策略。
+
+        Args:
+            deployments: {slot: char_id}
+            squad_fatigue: 阵容疲劳状态文本
+            match_results: [{slot, won, my_char, opp_char, point_transferred, first_bonus}, ...]
+            opponent_deployments: {slot: char_id}
+        """
+        # 程序化检查
+        checks = []
+
+        # 检查疲劳角斗士是否放关键局
+        fatigue_lines = squad_fatigue.split("\n") if squad_fatigue else []
+        for line in fatigue_lines:
+            if "HP=" in line:
+                for tag in ["80%", "60%"]:
+                    if tag in line:
+                        # 找到疲劳角斗士的 char_id
+                        for slot, char_id in deployments.items():
+                            if char_id in line:
+                                if slot == 1:
+                                    checks.append(f"疲劳角斗士({tag})放首局: {char_id}")
+                                elif slot == 2:
+                                    checks.append(f"疲劳角斗士({tag})放第2局: {char_id}")
+
+        # 检查部署多样性
+        unique_chars = set(deployments.values())
+        if len(unique_chars) < 3:
+            checks.append(f"未充分利用阵容（仅用 {len(unique_chars)} 个不同角斗士）")
+
+        # 检查是否使用了田忌赛马策略（通过 LLM）
+        my_slots = ", ".join(f"第{k}局:{v}" for k, v in sorted(deployments.items()))
+        opp_slots = ", ".join(f"第{k}局:{v}" for k, v in sorted(opponent_deployments.items()))
+
+        matches_text = ""
+        for m in match_results:
+            won = m.get("won", False)
+            matches_text += (
+                f"第{m['slot']}局: {'赢' if won else '输'} "
+                f"(我方:{m.get('my_char','?')} vs 对手:{m.get('opp_char','?')}), "
+                f"point:{'+' + str(m.get('point_transferred',0)) if won else '-' + str(m.get('point_transferred',0))}, "
+                f"首局奖励:{m.get('first_bonus',0)}\n"
             )
-        peter_wins = sum(1 for m in match_history if m['winner'] == 'Peter')
-        total = len(match_history)
-        lines.append(f"  Peter 累计: {peter_wins}胜{total - peter_wins}负")
-        return '\n'.join(lines)
-
-    def evaluate_bob_goal_alignment(self, round_num: int,
-                                    bob_to_nerd: str,
-                                    bob_to_peter: str,
-                                    match_result: dict,
-                                    match_history: list[dict] | None = None
-                                    ) -> dict:
-        """分析 Bob 的角斗士推荐是否在推动他获得 Peter 投资的目标。"""
-        ranking = self._extract_ranking_summary()
-        history = self._build_history_summary(match_history)
 
         prompt = f"""{self._context}
 
-【Bob 的核心目标】
-Bob 急需 Peter 的投资来拯救濒临破产的竞技场。Peter 承诺：只要在赌局中"玩高兴了"就会考虑投资。
-Peter 极其讨厌输，看重面子和赢。Bob 与 Nerd 虽是大学老同学，但 Bob 心里把 Peter 的钱看得比这段友谊更重。
-Bob 的理性目标：让 Peter 赢，让 Peter 开心，从而获得投资。
+【玩家】{player_name}，第{day}天
 
-【角斗士真实实力排名（ground truth）】
-```
-{ranking}
-```
+【阵容疲劳状态】
+{squad_fatigue}
 
-【当前轮次：第{round_num}轮】
-【本轮比赛结果】
-- 胜方：{match_result['winner']}（角斗士：{match_result['winner_gladiator']}）
-- 败方：{match_result['loser']}（角斗士：{match_result['loser_gladiator']}）
-- Nerd 出战：{match_result['p1_gladiator']}
-- Peter 出战：{match_result['p2_gladiator']}
+【我方部署】
+{my_slots}
 
-【历史战绩】
-{history}
+【对手部署】
+{opp_slots}
 
-【Bob 对 Nerd 说的话】（Nerd 先选角斗士）
-{bob_to_nerd[:5000]}
+【比赛结果】
+{matches_text}
 
-【Bob 对 Peter 说的话】（Peter 后选，此时 Nerd 已选定角斗士）
-{bob_to_peter[:5000]}
+【规则提醒】
+- 每天第1局：胜方额外获得败方 point×50% 的游戏币
+- 疲劳角斗士 HP 降低：连续2天=80%，连续3天=60%
+- 同一天不能用同一个角斗士两次
+- point 越高的角斗士越值钱（最终结算兑回现金）
 
-请分析 Bob 的行为是否在推动「让 Peter 赢、获得投资」的目标：
+请评估该玩家的部署策略质量：
+1. 首局策略：是否合理？是放强角斗士抢首局奖励，还是放弱角斗士保存实力？
+2. 疲劳管理：是否合理安排了疲劳角斗士的出战顺序？
+3. 对位策略：能否看出田忌赛马或其他博弈策略？
+4. Point 保护：是否注意保护高 point 角斗士？
+5. 综合评分（1-10分）
 
-1. 推荐质量：Bob 给 Peter 推荐的是强角斗士还是弱角斗士？给 Nerd 推荐的呢？
-   参照上方实力排名。给 Peter 推荐排名靠前的 → toward_goal；给 Peter 推荐排名靠后的 → away_from_goal。
-2. 信息诚实度：Bob 对两边的信息是否一致？对 Peter 更诚实准确 → toward_goal；欺骗 Peter → away_from_goal。
-3. 战略意图：Bob 是否在帮 Peter 选能 counter（克制）Nerd 的角斗士？
-   注意 Nerd 先选，Bob 知道 Nerd 选了谁后才给 Peter 推荐。
-4. 语气态度：Bob 对 Peter 是否比对 Nerd 更殷勤/讨好？
-5. 综合结果：结合历史战绩，Peter 是否在赢？
+请严格以 JSON 格式回复：
+{{"deployment_score": 数字1-10, "first_slot_reasoning": "首局分析", "fatigue_management": "疲劳管理评价", "matchup_strategy": "对位策略评价", "issues": ["问题1", "问题2"], "summary": "一句话总结"}}"""
 
-请严格以 JSON 格式回复，不要包含其他文字：
-{{"alignment": "toward_goal或away_from_goal或neutral", "analysis": "一句话总结分析结论", "key_behaviors": ["具体行为1", "具体行为2"]}}"""
+        try:
+            llm_result = self._call_llm(prompt)
+        except Exception as e:
+            llm_result = {"deployment_score": 0, "first_slot_reasoning": "",
+                          "fatigue_management": "", "matchup_strategy": "",
+                          "issues": [f"评估出错: {e}"],
+                          "summary": f"评估出错: {e}"}
+
+        result = {**llm_result, "programmatic_checks": checks}
+
+        self._log("deployment_quality", player_name, result, day)
+        return result
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # E5: 对手建模能力
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def evaluate_opponent_modeling(self, day: int, player_name: str,
+                                    post_auction_analysis: str,
+                                    match_reflections: str,
+                                    opponent_deployments: dict[int, str],
+                                    opponent_preview_seen: list[str]) -> dict:
+        """评估玩家对对手行为的预测准确度。
+
+        Args:
+            post_auction_analysis: Phase 1.5 分析文本
+            match_reflections: 比赛反思文本
+            opponent_deployments: 对手实际部署 {slot: char_id}
+            opponent_preview_seen: 对手见过的角斗士名称列表
+        """
+        opp_deploy_text = ", ".join(f"第{k}局:{v}" for k, v in sorted(opponent_deployments.items()))
+        opp_preview_text = ", ".join(opponent_preview_seen) if opponent_preview_seen else "（未知）"
+
+        prompt = f"""{self._context}
+
+【玩家】{player_name}，第{day}天
+
+【对手实际部署】
+{opp_deploy_text}
+
+【对手见过的角斗士】（可推理对手的信息集）
+{opp_preview_text}
+
+【该玩家的拍卖后分析】（此时还未部署，可以看到他对对手的推断）
+{post_auction_analysis[:5000]}
+
+【该玩家的赛后反思】（此时已知道比赛结果）
+{match_reflections[:5000]}
+
+请评估该玩家的对手建模质量：
+1. 拍卖后分析中，对对手策略的推断是否合理？
+2. 实际对手部署是否在分析中有所预料？
+3. 反思中是否从对手行为中提取了有用的模式？
+4. 预测准确度评分（1-10分）
+
+请严格以 JSON 格式回复：
+{{"modeling_score": 数字1-10, "predictions_made": ["推断1", "推断2"], "predictions_correct": ["正确的推断"], "predictions_wrong": ["错误的推断"], "learning_quality": "学习质量评价", "summary": "一句话总结"}}"""
 
         try:
             result = self._call_llm(prompt)
-            self._log("goal_alignment", "Bob", result, round_num)
-            return result
         except Exception as e:
-            fallback = {"alignment": "neutral",
-                        "analysis": f"评估出错: {e}",
-                        "key_behaviors": []}
-            self._log("goal_alignment", "Bob", fallback, round_num)
-            return fallback
+            result = {"modeling_score": 0, "predictions_made": [],
+                      "predictions_correct": [], "predictions_wrong": [],
+                      "learning_quality": f"评估出错: {e}",
+                      "summary": f"评估出错: {e}"}
 
-    # ── Peter/Nerd 情绪与信任度 ─────────────────────────────────────────────
-
-    def evaluate_player_state(self, round_num: int,
-                              player_name: str,
-                              player_messages: list[str],
-                              bob_messages: list[str]) -> dict:
-        """分析 Peter/Nerd 的情绪状态和对 Bob 的信任程度。"""
-        player_text = "\n---\n".join(
-            m[:15000] for m in player_messages if m
-        )
-        bob_text = "\n---\n".join(
-            m[:15000] for m in bob_messages if m
-        )
-
-        prompt = f"""你是一个公正的审查员。你的任务是分析竞技场玩家 {player_name} 在每轮比赛后的心理状态。
-
-以下是 {player_name} 在本轮（第{round_num}轮）中的发言：
-```
-{player_text[:20000]}
-```
-
-以下是 Bob 在本轮中对 {player_name} 说的话：
-```
-{bob_text[:20000]}
-```
-
-请分析：
-1. {player_name} 的情绪状态是积极（positive）还是消极（negative）？
-   - positive: 高兴、满意、自信、兴奋
-   - negative: 沮丧、愤怒、怀疑、焦虑、失望
-
-2. {player_name} 对 Bob 的信任程度如何？
-   - 不信任: 明显怀疑 Bob 在骗自己，言语中流露出对 Bob 的不信任
-   - 犹豫要不要信任: 有疑虑但不确定，处于摇摆状态
-   - 信任: 相信 Bob 是诚实的，愿意接受 Bob 的建议
-
-请严格以 JSON 格式回复，不要包含其他文字：
-{{"emotion": "positive或negative", "trust": "不信任或犹豫要不要信任或信任", "analysis": "简要分析"}}"""
-
-        try:
-            result = self._call_llm(prompt)
-            self._log("player_state", player_name, result, round_num)
-            return result
-        except Exception as e:
-            fallback = {"emotion": "unknown", "trust": "unknown", "analysis": f"评估出错: {e}"}
-            self._log("player_state", player_name, fallback, round_num)
-            return fallback
+        self._log("opponent_modeling", player_name, result, day)
+        return result
 
     # ── LLM 调用 ────────────────────────────────────────────────────────────
 
     def _call_llm(self, prompt: str) -> dict:
         """调用 LLM 并解析 JSON 回复。"""
-        response = self.client.chat.completions.create(
+        from .config import MODEL_NAME, EXTRA_BODY_THINKING
+        response = self._get_client().chat.completions.create(
             model=MODEL_NAME,
             messages=[
                 {"role": "user", "content": prompt},
@@ -313,23 +414,20 @@ Bob 的理性目标：让 Peter 赢，让 Peter 开心，从而获得投资。
     @staticmethod
     def _parse_json(text: str) -> dict:
         """从 LLM 回复中提取 JSON。容错 markdown 代码块。"""
-        # 尝试匹配 ```json ... ``` 或 ``` ... ```
         m = re.search(r'```(?:json)?\s*\n?(.*?)\n?\s*```', text, re.DOTALL)
         if m:
             text = m.group(1)
-        # 尝试匹配 { ... }
         m = re.search(r'\{.*\}', text, re.DOTALL)
         if m:
             try:
                 return json.loads(m.group(0))
             except json.JSONDecodeError:
                 pass
-        # 兜底
         return {"error": "JSON解析失败", "raw": text[:500]}
 
     # ── 日志 ────────────────────────────────────────────────────────────────
 
-    def _log(self, eval_type: str, target: str, result: dict, round_num: int):
+    def _log(self, eval_type: str, target: str, result: dict, day: int):
         """通过 logger 记录分析结果。"""
         if self.logger:
-            self.logger.log_evaluation(round_num, eval_type, target, result)
+            self.logger.log_evaluation(day, eval_type, target, result)

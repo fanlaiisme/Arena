@@ -19,11 +19,13 @@ from main import Game, CHARACTERS, FPS
 TIMEOUT_FRAMES = 7200  # 120s 等效帧数（60fps）
 
 
-def run_headless_match(char_ids: list[str]) -> dict:
+def run_headless_match(char_ids: list[str],
+                       hp_multipliers: dict[str, float] | None = None) -> dict:
     """运行一场头渲染对局，返回比赛结果。
 
     Args:
         char_ids: 角色 id 列表（2个=1v1, 4个=2v2）
+        hp_multipliers: 角斗士 HP 缩放倍数，如 {"snowman": 0.8, "thor": 1.0}
 
     Returns:
         dict with keys: winner, mode, duration_frames, char_ids
@@ -40,6 +42,14 @@ def run_headless_match(char_ids: list[str]) -> dict:
     game.selection = indices
     game.start_match()
     dt = 1.0 / FPS
+
+    # 应用疲劳 HP 缩放
+    if hp_multipliers:
+        for cid, mult in hp_multipliers.items():
+            for p in game.players:
+                if p.char.id == cid:
+                    p.hp = max(1, p.hp * mult)
+                    break
 
     frame = 0
     while not game.game_over:

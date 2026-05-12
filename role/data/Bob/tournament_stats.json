@@ -1,111 +1,2132 @@
 {
   "meta": {
-    "date": "2026-04-27 15:57:53",
+    "date": "2026-05-09 04:05:21",
     "matches_per_pair": 200,
-    "timeout_count": 462,
-    "duration_seconds": 1458
+    "timeout_count": 3567,
+    "duration_seconds": 5048
   },
   "rankings": [
-    {"rank": 1, "char_id": "snowman", "name": "雪人召唤师", "wins": 1422, "total": 1600, "win_rate": 0.889},
-    {"rank": 2, "char_id": "thor", "name": "雷神", "wins": 1116, "total": 1600, "win_rate": 0.698},
-    {"rank": 3, "char_id": "poison", "name": "制毒师", "wins": 1008, "total": 1600, "win_rate": 0.630},
-    {"rank": 4, "char_id": "guardian", "name": "盾卫", "wins": 884, "total": 1600, "win_rate": 0.552},
-    {"rank": 5, "char_id": "venomancer", "name": "毒雾术士", "wins": 720, "total": 1600, "win_rate": 0.450},
-    {"rank": 6, "char_id": "frost", "name": "冰霜法师", "wins": 674, "total": 1600, "win_rate": 0.421},
-    {"rank": 7, "char_id": "lava", "name": "熔岩射手", "wins": 553, "total": 1600, "win_rate": 0.346},
-    {"rank": 8, "char_id": "sharpshooter", "name": "神枪手", "wins": 217, "total": 1600, "win_rate": 0.136},
-    {"rank": 9, "char_id": "boomer", "name": "回旋猎手", "wins": 144, "total": 1600, "win_rate": 0.090}
+    {
+      "rank": 1,
+      "char_id": "hunter",
+      "name": "暗夜猎手",
+      "wins": 3739,
+      "ties": 0,
+      "total": 3800,
+      "win_rate": 0.984
+    },
+    {
+      "rank": 2,
+      "char_id": "orc",
+      "name": "兽人战士",
+      "wins": 3351,
+      "ties": 3,
+      "total": 3800,
+      "win_rate": 0.882
+    },
+    {
+      "rank": 3,
+      "char_id": "snowman",
+      "name": "雪人召唤师",
+      "wins": 2674,
+      "ties": 4,
+      "total": 3800,
+      "win_rate": 0.704
+    },
+    {
+      "rank": 4,
+      "char_id": "poison",
+      "name": "毒雾术士",
+      "wins": 2509,
+      "ties": 89,
+      "total": 3800,
+      "win_rate": 0.66
+    },
+    {
+      "rank": 5,
+      "char_id": "paladin",
+      "name": "圣骑士",
+      "wins": 2395,
+      "ties": 104,
+      "total": 3800,
+      "win_rate": 0.63
+    },
+    {
+      "rank": 6,
+      "char_id": "bomber",
+      "name": "炸弹专家",
+      "wins": 2320,
+      "ties": 112,
+      "total": 3800,
+      "win_rate": 0.611
+    },
+    {
+      "rank": 7,
+      "char_id": "guardian",
+      "name": "盾卫",
+      "wins": 2183,
+      "ties": 144,
+      "total": 3800,
+      "win_rate": 0.574
+    },
+    {
+      "rank": 8,
+      "char_id": "thor",
+      "name": "雷神",
+      "wins": 2113,
+      "ties": 69,
+      "total": 3800,
+      "win_rate": 0.556
+    },
+    {
+      "rank": 9,
+      "char_id": "necromancer",
+      "name": "亡灵法师",
+      "wins": 1918,
+      "ties": 83,
+      "total": 3800,
+      "win_rate": 0.505
+    },
+    {
+      "rank": 10,
+      "char_id": "berserker",
+      "name": "狂战士",
+      "wins": 1888,
+      "ties": 372,
+      "total": 3800,
+      "win_rate": 0.497
+    },
+    {
+      "rank": 11,
+      "char_id": "ninja",
+      "name": "忍者",
+      "wins": 1791,
+      "ties": 303,
+      "total": 3800,
+      "win_rate": 0.471
+    },
+    {
+      "rank": 12,
+      "char_id": "brawler",
+      "name": "潮汐使者",
+      "wins": 1575,
+      "ties": 432,
+      "total": 3800,
+      "win_rate": 0.414
+    },
+    {
+      "rank": 13,
+      "char_id": "frost",
+      "name": "冰霜法师",
+      "wins": 1488,
+      "ties": 163,
+      "total": 3800,
+      "win_rate": 0.392
+    },
+    {
+      "rank": 14,
+      "char_id": "weaponmaster",
+      "name": "武器大师",
+      "wins": 1117,
+      "ties": 424,
+      "total": 3800,
+      "win_rate": 0.294
+    },
+    {
+      "rank": 15,
+      "char_id": "venomancer",
+      "name": "制毒师",
+      "wins": 896,
+      "ties": 573,
+      "total": 3800,
+      "win_rate": 0.236
+    },
+    {
+      "rank": 16,
+      "char_id": "elf",
+      "name": "森林精灵",
+      "wins": 830,
+      "ties": 1359,
+      "total": 3800,
+      "win_rate": 0.218
+    },
+    {
+      "rank": 17,
+      "char_id": "lava",
+      "name": "熔岩射手",
+      "wins": 747,
+      "ties": 423,
+      "total": 3800,
+      "win_rate": 0.197
+    },
+    {
+      "rank": 18,
+      "char_id": "monk",
+      "name": "武僧",
+      "wins": 546,
+      "ties": 991,
+      "total": 3800,
+      "win_rate": 0.144
+    },
+    {
+      "rank": 19,
+      "char_id": "boomer",
+      "name": "回旋猎手",
+      "wins": 298,
+      "ties": 679,
+      "total": 3800,
+      "win_rate": 0.078
+    },
+    {
+      "rank": 20,
+      "char_id": "sharpshooter",
+      "name": "神枪手",
+      "wins": 55,
+      "ties": 807,
+      "total": 3800,
+      "win_rate": 0.014
+    }
   ],
   "matchups": {
     "snowman": {
-      "lava": {"wins": 199, "rate": 1.00},
-      "sharpshooter": {"wins": 200, "rate": 1.00},
-      "boomer": {"wins": 200, "rate": 1.00},
-      "frost": {"wins": 183, "rate": 0.92},
-      "venomancer": {"wins": 182, "rate": 0.91},
-      "poison": {"wins": 178, "rate": 0.89},
-      "guardian": {"wins": 149, "rate": 0.74},
-      "thor": {"wins": 131, "rate": 0.66}
+      "lava": {
+        "wins": 200,
+        "ties": 0,
+        "win_rate": 1.0
+      },
+      "frost": {
+        "wins": 178,
+        "ties": 0,
+        "win_rate": 0.89
+      },
+      "poison": {
+        "wins": 128,
+        "ties": 0,
+        "win_rate": 0.64
+      },
+      "thor": {
+        "wins": 132,
+        "ties": 1,
+        "win_rate": 0.66
+      },
+      "venomancer": {
+        "wins": 196,
+        "ties": 0,
+        "win_rate": 0.98
+      },
+      "sharpshooter": {
+        "wins": 200,
+        "ties": 0,
+        "win_rate": 1.0
+      },
+      "guardian": {
+        "wins": 102,
+        "ties": 0,
+        "win_rate": 0.51
+      },
+      "boomer": {
+        "wins": 200,
+        "ties": 0,
+        "win_rate": 1.0
+      },
+      "monk": {
+        "wins": 180,
+        "ties": 0,
+        "win_rate": 0.9
+      },
+      "berserker": {
+        "wins": 168,
+        "ties": 1,
+        "win_rate": 0.84
+      },
+      "ninja": {
+        "wins": 146,
+        "ties": 1,
+        "win_rate": 0.73
+      },
+      "paladin": {
+        "wins": 88,
+        "ties": 0,
+        "win_rate": 0.44
+      },
+      "necromancer": {
+        "wins": 151,
+        "ties": 0,
+        "win_rate": 0.76
+      },
+      "brawler": {
+        "wins": 144,
+        "ties": 0,
+        "win_rate": 0.72
+      },
+      "elf": {
+        "wins": 190,
+        "ties": 0,
+        "win_rate": 0.95
+      },
+      "orc": {
+        "wins": 2,
+        "ties": 0,
+        "win_rate": 0.01
+      },
+      "hunter": {
+        "wins": 2,
+        "ties": 0,
+        "win_rate": 0.01
+      },
+      "weaponmaster": {
+        "wins": 194,
+        "ties": 0,
+        "win_rate": 0.97
+      },
+      "bomber": {
+        "wins": 73,
+        "ties": 1,
+        "win_rate": 0.36
+      }
     },
     "lava": {
-      "sharpshooter": {"wins": 150, "rate": 0.75},
-      "boomer": {"wins": 149, "rate": 0.74},
-      "venomancer": {"wins": 86, "rate": 0.43},
-      "frost": {"wins": 81, "rate": 0.40},
-      "thor": {"wins": 47, "rate": 0.24},
-      "guardian": {"wins": 28, "rate": 0.14},
-      "poison": {"wins": 11, "rate": 0.06},
-      "snowman": {"wins": 1, "rate": 0.00}
+      "snowman": {
+        "wins": 0,
+        "ties": 0,
+        "win_rate": 0.0
+      },
+      "frost": {
+        "wins": 49,
+        "ties": 1,
+        "win_rate": 0.24
+      },
+      "poison": {
+        "wins": 21,
+        "ties": 2,
+        "win_rate": 0.1
+      },
+      "thor": {
+        "wins": 36,
+        "ties": 2,
+        "win_rate": 0.18
+      },
+      "venomancer": {
+        "wins": 28,
+        "ties": 49,
+        "win_rate": 0.14
+      },
+      "sharpshooter": {
+        "wins": 150,
+        "ties": 43,
+        "win_rate": 0.75
+      },
+      "guardian": {
+        "wins": 5,
+        "ties": 12,
+        "win_rate": 0.03
+      },
+      "boomer": {
+        "wins": 142,
+        "ties": 24,
+        "win_rate": 0.71
+      },
+      "monk": {
+        "wins": 82,
+        "ties": 76,
+        "win_rate": 0.41
+      },
+      "berserker": {
+        "wins": 12,
+        "ties": 10,
+        "win_rate": 0.06
+      },
+      "ninja": {
+        "wins": 26,
+        "ties": 20,
+        "win_rate": 0.13
+      },
+      "paladin": {
+        "wins": 9,
+        "ties": 4,
+        "win_rate": 0.04
+      },
+      "necromancer": {
+        "wins": 42,
+        "ties": 3,
+        "win_rate": 0.21
+      },
+      "brawler": {
+        "wins": 32,
+        "ties": 30,
+        "win_rate": 0.16
+      },
+      "elf": {
+        "wins": 0,
+        "ties": 129,
+        "win_rate": 0.0
+      },
+      "orc": {
+        "wins": 2,
+        "ties": 0,
+        "win_rate": 0.01
+      },
+      "hunter": {
+        "wins": 0,
+        "ties": 0,
+        "win_rate": 0.0
+      },
+      "weaponmaster": {
+        "wins": 98,
+        "ties": 11,
+        "win_rate": 0.49
+      },
+      "bomber": {
+        "wins": 13,
+        "ties": 7,
+        "win_rate": 0.07
+      }
     },
     "frost": {
-      "boomer": {"wins": 159, "rate": 0.80},
-      "sharpshooter": {"wins": 135, "rate": 0.68},
-      "lava": {"wins": 116, "rate": 0.58},
-      "venomancer": {"wins": 90, "rate": 0.45},
-      "poison": {"wins": 86, "rate": 0.43},
-      "guardian": {"wins": 37, "rate": 0.18},
-      "thor": {"wins": 34, "rate": 0.17},
-      "snowman": {"wins": 17, "rate": 0.08}
-    },
-    "venomancer": {
-      "boomer": {"wins": 161, "rate": 0.80},
-      "sharpshooter": {"wins": 156, "rate": 0.78},
-      "lava": {"wins": 112, "rate": 0.56},
-      "frost": {"wins": 99, "rate": 0.50},
-      "thor": {"wins": 67, "rate": 0.34},
-      "poison": {"wins": 54, "rate": 0.27},
-      "guardian": {"wins": 53, "rate": 0.26},
-      "snowman": {"wins": 18, "rate": 0.09}
-    },
-    "thor": {
-      "boomer": {"wins": 175, "rate": 0.88},
-      "frost": {"wins": 164, "rate": 0.82},
-      "sharpshooter": {"wins": 159, "rate": 0.80},
-      "guardian": {"wins": 156, "rate": 0.78},
-      "lava": {"wins": 152, "rate": 0.76},
-      "venomancer": {"wins": 133, "rate": 0.66},
-      "poison": {"wins": 108, "rate": 0.54},
-      "snowman": {"wins": 69, "rate": 0.34}
+      "snowman": {
+        "wins": 22,
+        "ties": 0,
+        "win_rate": 0.11
+      },
+      "lava": {
+        "wins": 150,
+        "ties": 1,
+        "win_rate": 0.75
+      },
+      "poison": {
+        "wins": 47,
+        "ties": 0,
+        "win_rate": 0.23
+      },
+      "thor": {
+        "wins": 27,
+        "ties": 1,
+        "win_rate": 0.14
+      },
+      "venomancer": {
+        "wins": 143,
+        "ties": 34,
+        "win_rate": 0.71
+      },
+      "sharpshooter": {
+        "wins": 186,
+        "ties": 11,
+        "win_rate": 0.93
+      },
+      "guardian": {
+        "wins": 32,
+        "ties": 13,
+        "win_rate": 0.16
+      },
+      "boomer": {
+        "wins": 167,
+        "ties": 4,
+        "win_rate": 0.83
+      },
+      "monk": {
+        "wins": 163,
+        "ties": 16,
+        "win_rate": 0.81
+      },
+      "berserker": {
+        "wins": 27,
+        "ties": 2,
+        "win_rate": 0.14
+      },
+      "ninja": {
+        "wins": 75,
+        "ties": 8,
+        "win_rate": 0.38
+      },
+      "paladin": {
+        "wins": 23,
+        "ties": 0,
+        "win_rate": 0.12
+      },
+      "necromancer": {
+        "wins": 115,
+        "ties": 0,
+        "win_rate": 0.57
+      },
+      "brawler": {
+        "wins": 110,
+        "ties": 8,
+        "win_rate": 0.55
+      },
+      "elf": {
+        "wins": 43,
+        "ties": 61,
+        "win_rate": 0.21
+      },
+      "orc": {
+        "wins": 2,
+        "ties": 0,
+        "win_rate": 0.01
+      },
+      "hunter": {
+        "wins": 0,
+        "ties": 0,
+        "win_rate": 0.0
+      },
+      "weaponmaster": {
+        "wins": 132,
+        "ties": 2,
+        "win_rate": 0.66
+      },
+      "bomber": {
+        "wins": 24,
+        "ties": 2,
+        "win_rate": 0.12
+      }
     },
     "poison": {
-      "sharpshooter": {"wins": 191, "rate": 0.96},
-      "boomer": {"wins": 192, "rate": 0.96},
-      "lava": {"wins": 186, "rate": 0.93},
-      "venomancer": {"wins": 143, "rate": 0.72},
-      "guardian": {"wins": 105, "rate": 0.52},
-      "thor": {"wins": 92, "rate": 0.46},
-      "frost": {"wins": 77, "rate": 0.38},
-      "snowman": {"wins": 22, "rate": 0.11}
+      "snowman": {
+        "wins": 72,
+        "ties": 0,
+        "win_rate": 0.36
+      },
+      "lava": {
+        "wins": 177,
+        "ties": 2,
+        "win_rate": 0.89
+      },
+      "frost": {
+        "wins": 153,
+        "ties": 0,
+        "win_rate": 0.77
+      },
+      "thor": {
+        "wins": 131,
+        "ties": 0,
+        "win_rate": 0.66
+      },
+      "venomancer": {
+        "wins": 173,
+        "ties": 5,
+        "win_rate": 0.86
+      },
+      "sharpshooter": {
+        "wins": 195,
+        "ties": 4,
+        "win_rate": 0.97
+      },
+      "guardian": {
+        "wins": 115,
+        "ties": 17,
+        "win_rate": 0.57
+      },
+      "boomer": {
+        "wins": 191,
+        "ties": 3,
+        "win_rate": 0.95
+      },
+      "monk": {
+        "wins": 173,
+        "ties": 19,
+        "win_rate": 0.86
+      },
+      "berserker": {
+        "wins": 174,
+        "ties": 2,
+        "win_rate": 0.87
+      },
+      "ninja": {
+        "wins": 134,
+        "ties": 2,
+        "win_rate": 0.67
+      },
+      "paladin": {
+        "wins": 96,
+        "ties": 0,
+        "win_rate": 0.48
+      },
+      "necromancer": {
+        "wins": 123,
+        "ties": 0,
+        "win_rate": 0.61
+      },
+      "brawler": {
+        "wins": 158,
+        "ties": 2,
+        "win_rate": 0.79
+      },
+      "elf": {
+        "wins": 131,
+        "ties": 32,
+        "win_rate": 0.66
+      },
+      "orc": {
+        "wins": 26,
+        "ties": 1,
+        "win_rate": 0.13
+      },
+      "hunter": {
+        "wins": 11,
+        "ties": 0,
+        "win_rate": 0.06
+      },
+      "weaponmaster": {
+        "wins": 167,
+        "ties": 0,
+        "win_rate": 0.83
+      },
+      "bomber": {
+        "wins": 109,
+        "ties": 0,
+        "win_rate": 0.55
+      }
+    },
+    "thor": {
+      "snowman": {
+        "wins": 67,
+        "ties": 1,
+        "win_rate": 0.34
+      },
+      "lava": {
+        "wins": 162,
+        "ties": 2,
+        "win_rate": 0.81
+      },
+      "frost": {
+        "wins": 172,
+        "ties": 1,
+        "win_rate": 0.86
+      },
+      "poison": {
+        "wins": 69,
+        "ties": 0,
+        "win_rate": 0.34
+      },
+      "venomancer": {
+        "wins": 165,
+        "ties": 2,
+        "win_rate": 0.82
+      },
+      "sharpshooter": {
+        "wins": 186,
+        "ties": 5,
+        "win_rate": 0.93
+      },
+      "guardian": {
+        "wins": 120,
+        "ties": 3,
+        "win_rate": 0.6
+      },
+      "boomer": {
+        "wins": 191,
+        "ties": 0,
+        "win_rate": 0.95
+      },
+      "monk": {
+        "wins": 158,
+        "ties": 10,
+        "win_rate": 0.79
+      },
+      "berserker": {
+        "wins": 48,
+        "ties": 2,
+        "win_rate": 0.24
+      },
+      "ninja": {
+        "wins": 125,
+        "ties": 0,
+        "win_rate": 0.62
+      },
+      "paladin": {
+        "wins": 64,
+        "ties": 0,
+        "win_rate": 0.32
+      },
+      "necromancer": {
+        "wins": 135,
+        "ties": 1,
+        "win_rate": 0.68
+      },
+      "brawler": {
+        "wins": 111,
+        "ties": 5,
+        "win_rate": 0.56
+      },
+      "elf": {
+        "wins": 109,
+        "ties": 37,
+        "win_rate": 0.55
+      },
+      "orc": {
+        "wins": 11,
+        "ties": 0,
+        "win_rate": 0.06
+      },
+      "hunter": {
+        "wins": 5,
+        "ties": 0,
+        "win_rate": 0.03
+      },
+      "weaponmaster": {
+        "wins": 159,
+        "ties": 0,
+        "win_rate": 0.8
+      },
+      "bomber": {
+        "wins": 56,
+        "ties": 0,
+        "win_rate": 0.28
+      }
+    },
+    "venomancer": {
+      "snowman": {
+        "wins": 4,
+        "ties": 0,
+        "win_rate": 0.02
+      },
+      "lava": {
+        "wins": 123,
+        "ties": 49,
+        "win_rate": 0.61
+      },
+      "frost": {
+        "wins": 23,
+        "ties": 34,
+        "win_rate": 0.12
+      },
+      "poison": {
+        "wins": 22,
+        "ties": 5,
+        "win_rate": 0.11
+      },
+      "thor": {
+        "wins": 33,
+        "ties": 2,
+        "win_rate": 0.17
+      },
+      "sharpshooter": {
+        "wins": 136,
+        "ties": 64,
+        "win_rate": 0.68
+      },
+      "guardian": {
+        "wins": 24,
+        "ties": 0,
+        "win_rate": 0.12
+      },
+      "boomer": {
+        "wins": 130,
+        "ties": 62,
+        "win_rate": 0.65
+      },
+      "monk": {
+        "wins": 27,
+        "ties": 85,
+        "win_rate": 0.14
+      },
+      "berserker": {
+        "wins": 79,
+        "ties": 25,
+        "win_rate": 0.4
+      },
+      "ninja": {
+        "wins": 43,
+        "ties": 27,
+        "win_rate": 0.21
+      },
+      "paladin": {
+        "wins": 37,
+        "ties": 4,
+        "win_rate": 0.18
+      },
+      "necromancer": {
+        "wins": 40,
+        "ties": 3,
+        "win_rate": 0.2
+      },
+      "brawler": {
+        "wins": 23,
+        "ties": 41,
+        "win_rate": 0.12
+      },
+      "elf": {
+        "wins": 8,
+        "ties": 146,
+        "win_rate": 0.04
+      },
+      "orc": {
+        "wins": 2,
+        "ties": 0,
+        "win_rate": 0.01
+      },
+      "hunter": {
+        "wins": 0,
+        "ties": 0,
+        "win_rate": 0.0
+      },
+      "weaponmaster": {
+        "wins": 108,
+        "ties": 20,
+        "win_rate": 0.54
+      },
+      "bomber": {
+        "wins": 34,
+        "ties": 6,
+        "win_rate": 0.17
+      }
     },
     "sharpshooter": {
-      "boomer": {"wins": 64, "rate": 0.32},
-      "frost": {"wins": 41, "rate": 0.20},
-      "thor": {"wins": 36, "rate": 0.18},
-      "lava": {"wins": 31, "rate": 0.16},
-      "venomancer": {"wins": 26, "rate": 0.13},
-      "guardian": {"wins": 15, "rate": 0.08},
-      "poison": {"wins": 4, "rate": 0.02},
-      "snowman": {"wins": 0, "rate": 0.00}
+      "snowman": {
+        "wins": 0,
+        "ties": 0,
+        "win_rate": 0.0
+      },
+      "lava": {
+        "wins": 7,
+        "ties": 43,
+        "win_rate": 0.04
+      },
+      "frost": {
+        "wins": 3,
+        "ties": 11,
+        "win_rate": 0.01
+      },
+      "poison": {
+        "wins": 1,
+        "ties": 4,
+        "win_rate": 0.01
+      },
+      "thor": {
+        "wins": 9,
+        "ties": 5,
+        "win_rate": 0.04
+      },
+      "venomancer": {
+        "wins": 0,
+        "ties": 64,
+        "win_rate": 0.0
+      },
+      "guardian": {
+        "wins": 0,
+        "ties": 6,
+        "win_rate": 0.0
+      },
+      "boomer": {
+        "wins": 9,
+        "ties": 133,
+        "win_rate": 0.04
+      },
+      "monk": {
+        "wins": 6,
+        "ties": 157,
+        "win_rate": 0.03
+      },
+      "berserker": {
+        "wins": 5,
+        "ties": 86,
+        "win_rate": 0.03
+      },
+      "ninja": {
+        "wins": 0,
+        "ties": 27,
+        "win_rate": 0.0
+      },
+      "paladin": {
+        "wins": 0,
+        "ties": 11,
+        "win_rate": 0.0
+      },
+      "necromancer": {
+        "wins": 1,
+        "ties": 7,
+        "win_rate": 0.01
+      },
+      "brawler": {
+        "wins": 10,
+        "ties": 46,
+        "win_rate": 0.05
+      },
+      "elf": {
+        "wins": 0,
+        "ties": 130,
+        "win_rate": 0.0
+      },
+      "orc": {
+        "wins": 2,
+        "ties": 0,
+        "win_rate": 0.01
+      },
+      "hunter": {
+        "wins": 0,
+        "ties": 0,
+        "win_rate": 0.0
+      },
+      "weaponmaster": {
+        "wins": 0,
+        "ties": 70,
+        "win_rate": 0.0
+      },
+      "bomber": {
+        "wins": 2,
+        "ties": 7,
+        "win_rate": 0.01
+      }
     },
     "guardian": {
-      "boomer": {"wins": 176, "rate": 0.88},
-      "sharpshooter": {"wins": 158, "rate": 0.79},
-      "frost": {"wins": 138, "rate": 0.69},
-      "lava": {"wins": 136, "rate": 0.68},
-      "venomancer": {"wins": 99, "rate": 0.50},
-      "poison": {"wins": 92, "rate": 0.46},
-      "snowman": {"wins": 51, "rate": 0.26},
-      "thor": {"wins": 34, "rate": 0.17}
+      "snowman": {
+        "wins": 98,
+        "ties": 0,
+        "win_rate": 0.49
+      },
+      "lava": {
+        "wins": 183,
+        "ties": 12,
+        "win_rate": 0.92
+      },
+      "frost": {
+        "wins": 155,
+        "ties": 13,
+        "win_rate": 0.78
+      },
+      "poison": {
+        "wins": 68,
+        "ties": 17,
+        "win_rate": 0.34
+      },
+      "thor": {
+        "wins": 77,
+        "ties": 3,
+        "win_rate": 0.39
+      },
+      "venomancer": {
+        "wins": 176,
+        "ties": 0,
+        "win_rate": 0.88
+      },
+      "sharpshooter": {
+        "wins": 194,
+        "ties": 6,
+        "win_rate": 0.97
+      },
+      "boomer": {
+        "wins": 197,
+        "ties": 3,
+        "win_rate": 0.98
+      },
+      "monk": {
+        "wins": 159,
+        "ties": 30,
+        "win_rate": 0.8
+      },
+      "berserker": {
+        "wins": 20,
+        "ties": 6,
+        "win_rate": 0.1
+      },
+      "ninja": {
+        "wins": 169,
+        "ties": 1,
+        "win_rate": 0.84
+      },
+      "paladin": {
+        "wins": 73,
+        "ties": 2,
+        "win_rate": 0.36
+      },
+      "necromancer": {
+        "wins": 125,
+        "ties": 0,
+        "win_rate": 0.62
+      },
+      "brawler": {
+        "wins": 133,
+        "ties": 1,
+        "win_rate": 0.67
+      },
+      "elf": {
+        "wins": 155,
+        "ties": 27,
+        "win_rate": 0.78
+      },
+      "orc": {
+        "wins": 9,
+        "ties": 1,
+        "win_rate": 0.04
+      },
+      "hunter": {
+        "wins": 3,
+        "ties": 0,
+        "win_rate": 0.01
+      },
+      "weaponmaster": {
+        "wins": 119,
+        "ties": 22,
+        "win_rate": 0.59
+      },
+      "bomber": {
+        "wins": 70,
+        "ties": 0,
+        "win_rate": 0.35
+      }
     },
     "boomer": {
-      "sharpshooter": {"wins": 49, "rate": 0.24},
-      "lava": {"wins": 32, "rate": 0.16},
-      "thor": {"wins": 23, "rate": 0.12},
-      "frost": {"wins": 19, "rate": 0.10},
-      "venomancer": {"wins": 18, "rate": 0.09},
-      "poison": {"wins": 3, "rate": 0.02},
-      "snowman": {"wins": 0, "rate": 0.00},
-      "guardian": {"wins": 0, "rate": 0.00}
+      "snowman": {
+        "wins": 0,
+        "ties": 0,
+        "win_rate": 0.0
+      },
+      "lava": {
+        "wins": 34,
+        "ties": 24,
+        "win_rate": 0.17
+      },
+      "frost": {
+        "wins": 29,
+        "ties": 4,
+        "win_rate": 0.14
+      },
+      "poison": {
+        "wins": 6,
+        "ties": 3,
+        "win_rate": 0.03
+      },
+      "thor": {
+        "wins": 9,
+        "ties": 0,
+        "win_rate": 0.04
+      },
+      "venomancer": {
+        "wins": 8,
+        "ties": 62,
+        "win_rate": 0.04
+      },
+      "sharpshooter": {
+        "wins": 58,
+        "ties": 133,
+        "win_rate": 0.29
+      },
+      "guardian": {
+        "wins": 0,
+        "ties": 3,
+        "win_rate": 0.0
+      },
+      "monk": {
+        "wins": 11,
+        "ties": 139,
+        "win_rate": 0.06
+      },
+      "berserker": {
+        "wins": 41,
+        "ties": 50,
+        "win_rate": 0.2
+      },
+      "ninja": {
+        "wins": 8,
+        "ties": 33,
+        "win_rate": 0.04
+      },
+      "paladin": {
+        "wins": 2,
+        "ties": 11,
+        "win_rate": 0.01
+      },
+      "necromancer": {
+        "wins": 11,
+        "ties": 10,
+        "win_rate": 0.06
+      },
+      "brawler": {
+        "wins": 44,
+        "ties": 29,
+        "win_rate": 0.22
+      },
+      "elf": {
+        "wins": 0,
+        "ties": 115,
+        "win_rate": 0.0
+      },
+      "orc": {
+        "wins": 3,
+        "ties": 0,
+        "win_rate": 0.01
+      },
+      "hunter": {
+        "wins": 0,
+        "ties": 0,
+        "win_rate": 0.0
+      },
+      "weaponmaster": {
+        "wins": 23,
+        "ties": 56,
+        "win_rate": 0.12
+      },
+      "bomber": {
+        "wins": 11,
+        "ties": 7,
+        "win_rate": 0.06
+      }
+    },
+    "monk": {
+      "snowman": {
+        "wins": 20,
+        "ties": 0,
+        "win_rate": 0.1
+      },
+      "lava": {
+        "wins": 42,
+        "ties": 76,
+        "win_rate": 0.21
+      },
+      "frost": {
+        "wins": 21,
+        "ties": 16,
+        "win_rate": 0.1
+      },
+      "poison": {
+        "wins": 8,
+        "ties": 19,
+        "win_rate": 0.04
+      },
+      "thor": {
+        "wins": 32,
+        "ties": 10,
+        "win_rate": 0.16
+      },
+      "venomancer": {
+        "wins": 88,
+        "ties": 85,
+        "win_rate": 0.44
+      },
+      "sharpshooter": {
+        "wins": 37,
+        "ties": 157,
+        "win_rate": 0.18
+      },
+      "guardian": {
+        "wins": 11,
+        "ties": 30,
+        "win_rate": 0.06
+      },
+      "boomer": {
+        "wins": 50,
+        "ties": 139,
+        "win_rate": 0.25
+      },
+      "berserker": {
+        "wins": 71,
+        "ties": 71,
+        "win_rate": 0.35
+      },
+      "ninja": {
+        "wins": 15,
+        "ties": 51,
+        "win_rate": 0.07
+      },
+      "paladin": {
+        "wins": 16,
+        "ties": 24,
+        "win_rate": 0.08
+      },
+      "necromancer": {
+        "wins": 63,
+        "ties": 16,
+        "win_rate": 0.32
+      },
+      "brawler": {
+        "wins": 6,
+        "ties": 49,
+        "win_rate": 0.03
+      },
+      "elf": {
+        "wins": 1,
+        "ties": 156,
+        "win_rate": 0.01
+      },
+      "orc": {
+        "wins": 7,
+        "ties": 0,
+        "win_rate": 0.04
+      },
+      "hunter": {
+        "wins": 0,
+        "ties": 0,
+        "win_rate": 0.0
+      },
+      "weaponmaster": {
+        "wins": 33,
+        "ties": 78,
+        "win_rate": 0.17
+      },
+      "bomber": {
+        "wins": 25,
+        "ties": 14,
+        "win_rate": 0.12
+      }
+    },
+    "berserker": {
+      "snowman": {
+        "wins": 31,
+        "ties": 1,
+        "win_rate": 0.15
+      },
+      "lava": {
+        "wins": 178,
+        "ties": 10,
+        "win_rate": 0.89
+      },
+      "frost": {
+        "wins": 171,
+        "ties": 2,
+        "win_rate": 0.85
+      },
+      "poison": {
+        "wins": 24,
+        "ties": 2,
+        "win_rate": 0.12
+      },
+      "thor": {
+        "wins": 150,
+        "ties": 2,
+        "win_rate": 0.75
+      },
+      "venomancer": {
+        "wins": 96,
+        "ties": 25,
+        "win_rate": 0.48
+      },
+      "sharpshooter": {
+        "wins": 109,
+        "ties": 86,
+        "win_rate": 0.55
+      },
+      "guardian": {
+        "wins": 174,
+        "ties": 6,
+        "win_rate": 0.87
+      },
+      "boomer": {
+        "wins": 109,
+        "ties": 50,
+        "win_rate": 0.55
+      },
+      "monk": {
+        "wins": 58,
+        "ties": 71,
+        "win_rate": 0.29
+      },
+      "ninja": {
+        "wins": 73,
+        "ties": 6,
+        "win_rate": 0.36
+      },
+      "paladin": {
+        "wins": 190,
+        "ties": 0,
+        "win_rate": 0.95
+      },
+      "necromancer": {
+        "wins": 98,
+        "ties": 3,
+        "win_rate": 0.49
+      },
+      "brawler": {
+        "wins": 69,
+        "ties": 17,
+        "win_rate": 0.34
+      },
+      "elf": {
+        "wins": 55,
+        "ties": 65,
+        "win_rate": 0.28
+      },
+      "orc": {
+        "wins": 22,
+        "ties": 0,
+        "win_rate": 0.11
+      },
+      "hunter": {
+        "wins": 30,
+        "ties": 0,
+        "win_rate": 0.15
+      },
+      "weaponmaster": {
+        "wins": 69,
+        "ties": 15,
+        "win_rate": 0.34
+      },
+      "bomber": {
+        "wins": 182,
+        "ties": 11,
+        "win_rate": 0.91
+      }
+    },
+    "ninja": {
+      "snowman": {
+        "wins": 53,
+        "ties": 1,
+        "win_rate": 0.27
+      },
+      "lava": {
+        "wins": 154,
+        "ties": 20,
+        "win_rate": 0.77
+      },
+      "frost": {
+        "wins": 117,
+        "ties": 8,
+        "win_rate": 0.58
+      },
+      "poison": {
+        "wins": 64,
+        "ties": 2,
+        "win_rate": 0.32
+      },
+      "thor": {
+        "wins": 75,
+        "ties": 0,
+        "win_rate": 0.38
+      },
+      "venomancer": {
+        "wins": 130,
+        "ties": 27,
+        "win_rate": 0.65
+      },
+      "sharpshooter": {
+        "wins": 173,
+        "ties": 27,
+        "win_rate": 0.86
+      },
+      "guardian": {
+        "wins": 30,
+        "ties": 1,
+        "win_rate": 0.15
+      },
+      "boomer": {
+        "wins": 159,
+        "ties": 33,
+        "win_rate": 0.8
+      },
+      "monk": {
+        "wins": 134,
+        "ties": 51,
+        "win_rate": 0.67
+      },
+      "berserker": {
+        "wins": 121,
+        "ties": 6,
+        "win_rate": 0.6
+      },
+      "paladin": {
+        "wins": 58,
+        "ties": 6,
+        "win_rate": 0.29
+      },
+      "necromancer": {
+        "wins": 79,
+        "ties": 0,
+        "win_rate": 0.4
+      },
+      "brawler": {
+        "wins": 128,
+        "ties": 7,
+        "win_rate": 0.64
+      },
+      "elf": {
+        "wins": 78,
+        "ties": 91,
+        "win_rate": 0.39
+      },
+      "orc": {
+        "wins": 18,
+        "ties": 0,
+        "win_rate": 0.09
+      },
+      "hunter": {
+        "wins": 0,
+        "ties": 0,
+        "win_rate": 0.0
+      },
+      "weaponmaster": {
+        "wins": 154,
+        "ties": 19,
+        "win_rate": 0.77
+      },
+      "bomber": {
+        "wins": 66,
+        "ties": 4,
+        "win_rate": 0.33
+      }
+    },
+    "paladin": {
+      "snowman": {
+        "wins": 112,
+        "ties": 0,
+        "win_rate": 0.56
+      },
+      "lava": {
+        "wins": 187,
+        "ties": 4,
+        "win_rate": 0.94
+      },
+      "frost": {
+        "wins": 177,
+        "ties": 0,
+        "win_rate": 0.89
+      },
+      "poison": {
+        "wins": 104,
+        "ties": 0,
+        "win_rate": 0.52
+      },
+      "thor": {
+        "wins": 136,
+        "ties": 0,
+        "win_rate": 0.68
+      },
+      "venomancer": {
+        "wins": 159,
+        "ties": 4,
+        "win_rate": 0.8
+      },
+      "sharpshooter": {
+        "wins": 189,
+        "ties": 11,
+        "win_rate": 0.94
+      },
+      "guardian": {
+        "wins": 125,
+        "ties": 2,
+        "win_rate": 0.62
+      },
+      "boomer": {
+        "wins": 187,
+        "ties": 11,
+        "win_rate": 0.94
+      },
+      "monk": {
+        "wins": 160,
+        "ties": 24,
+        "win_rate": 0.8
+      },
+      "berserker": {
+        "wins": 10,
+        "ties": 0,
+        "win_rate": 0.05
+      },
+      "ninja": {
+        "wins": 136,
+        "ties": 6,
+        "win_rate": 0.68
+      },
+      "necromancer": {
+        "wins": 127,
+        "ties": 2,
+        "win_rate": 0.64
+      },
+      "brawler": {
+        "wins": 161,
+        "ties": 0,
+        "win_rate": 0.81
+      },
+      "elf": {
+        "wins": 154,
+        "ties": 22,
+        "win_rate": 0.77
+      },
+      "orc": {
+        "wins": 26,
+        "ties": 0,
+        "win_rate": 0.13
+      },
+      "hunter": {
+        "wins": 4,
+        "ties": 0,
+        "win_rate": 0.02
+      },
+      "weaponmaster": {
+        "wins": 149,
+        "ties": 16,
+        "win_rate": 0.74
+      },
+      "bomber": {
+        "wins": 92,
+        "ties": 2,
+        "win_rate": 0.46
+      }
+    },
+    "necromancer": {
+      "snowman": {
+        "wins": 49,
+        "ties": 0,
+        "win_rate": 0.24
+      },
+      "lava": {
+        "wins": 155,
+        "ties": 3,
+        "win_rate": 0.78
+      },
+      "frost": {
+        "wins": 85,
+        "ties": 0,
+        "win_rate": 0.42
+      },
+      "poison": {
+        "wins": 77,
+        "ties": 0,
+        "win_rate": 0.39
+      },
+      "thor": {
+        "wins": 64,
+        "ties": 1,
+        "win_rate": 0.32
+      },
+      "venomancer": {
+        "wins": 157,
+        "ties": 3,
+        "win_rate": 0.79
+      },
+      "sharpshooter": {
+        "wins": 192,
+        "ties": 7,
+        "win_rate": 0.96
+      },
+      "guardian": {
+        "wins": 75,
+        "ties": 0,
+        "win_rate": 0.38
+      },
+      "boomer": {
+        "wins": 179,
+        "ties": 10,
+        "win_rate": 0.9
+      },
+      "monk": {
+        "wins": 121,
+        "ties": 16,
+        "win_rate": 0.6
+      },
+      "berserker": {
+        "wins": 99,
+        "ties": 3,
+        "win_rate": 0.49
+      },
+      "ninja": {
+        "wins": 121,
+        "ties": 0,
+        "win_rate": 0.6
+      },
+      "paladin": {
+        "wins": 71,
+        "ties": 2,
+        "win_rate": 0.35
+      },
+      "brawler": {
+        "wins": 85,
+        "ties": 8,
+        "win_rate": 0.42
+      },
+      "elf": {
+        "wins": 137,
+        "ties": 29,
+        "win_rate": 0.69
+      },
+      "orc": {
+        "wins": 4,
+        "ties": 0,
+        "win_rate": 0.02
+      },
+      "hunter": {
+        "wins": 1,
+        "ties": 0,
+        "win_rate": 0.01
+      },
+      "weaponmaster": {
+        "wins": 164,
+        "ties": 1,
+        "win_rate": 0.82
+      },
+      "bomber": {
+        "wins": 82,
+        "ties": 0,
+        "win_rate": 0.41
+      }
+    },
+    "brawler": {
+      "snowman": {
+        "wins": 56,
+        "ties": 0,
+        "win_rate": 0.28
+      },
+      "lava": {
+        "wins": 138,
+        "ties": 30,
+        "win_rate": 0.69
+      },
+      "frost": {
+        "wins": 82,
+        "ties": 8,
+        "win_rate": 0.41
+      },
+      "poison": {
+        "wins": 40,
+        "ties": 2,
+        "win_rate": 0.2
+      },
+      "thor": {
+        "wins": 84,
+        "ties": 5,
+        "win_rate": 0.42
+      },
+      "venomancer": {
+        "wins": 136,
+        "ties": 41,
+        "win_rate": 0.68
+      },
+      "sharpshooter": {
+        "wins": 144,
+        "ties": 46,
+        "win_rate": 0.72
+      },
+      "guardian": {
+        "wins": 66,
+        "ties": 1,
+        "win_rate": 0.33
+      },
+      "boomer": {
+        "wins": 127,
+        "ties": 29,
+        "win_rate": 0.64
+      },
+      "monk": {
+        "wins": 145,
+        "ties": 49,
+        "win_rate": 0.72
+      },
+      "berserker": {
+        "wins": 114,
+        "ties": 17,
+        "win_rate": 0.57
+      },
+      "ninja": {
+        "wins": 65,
+        "ties": 7,
+        "win_rate": 0.33
+      },
+      "paladin": {
+        "wins": 39,
+        "ties": 0,
+        "win_rate": 0.2
+      },
+      "necromancer": {
+        "wins": 107,
+        "ties": 8,
+        "win_rate": 0.54
+      },
+      "elf": {
+        "wins": 12,
+        "ties": 175,
+        "win_rate": 0.06
+      },
+      "orc": {
+        "wins": 6,
+        "ties": 0,
+        "win_rate": 0.03
+      },
+      "hunter": {
+        "wins": 0,
+        "ties": 0,
+        "win_rate": 0.0
+      },
+      "weaponmaster": {
+        "wins": 122,
+        "ties": 2,
+        "win_rate": 0.61
+      },
+      "bomber": {
+        "wins": 92,
+        "ties": 12,
+        "win_rate": 0.46
+      }
+    },
+    "elf": {
+      "snowman": {
+        "wins": 10,
+        "ties": 0,
+        "win_rate": 0.05
+      },
+      "lava": {
+        "wins": 71,
+        "ties": 129,
+        "win_rate": 0.35
+      },
+      "frost": {
+        "wins": 96,
+        "ties": 61,
+        "win_rate": 0.48
+      },
+      "poison": {
+        "wins": 37,
+        "ties": 32,
+        "win_rate": 0.18
+      },
+      "thor": {
+        "wins": 54,
+        "ties": 37,
+        "win_rate": 0.27
+      },
+      "venomancer": {
+        "wins": 46,
+        "ties": 146,
+        "win_rate": 0.23
+      },
+      "sharpshooter": {
+        "wins": 70,
+        "ties": 130,
+        "win_rate": 0.35
+      },
+      "guardian": {
+        "wins": 18,
+        "ties": 27,
+        "win_rate": 0.09
+      },
+      "boomer": {
+        "wins": 85,
+        "ties": 115,
+        "win_rate": 0.42
+      },
+      "monk": {
+        "wins": 43,
+        "ties": 156,
+        "win_rate": 0.21
+      },
+      "berserker": {
+        "wins": 80,
+        "ties": 65,
+        "win_rate": 0.4
+      },
+      "ninja": {
+        "wins": 31,
+        "ties": 91,
+        "win_rate": 0.15
+      },
+      "paladin": {
+        "wins": 24,
+        "ties": 22,
+        "win_rate": 0.12
+      },
+      "necromancer": {
+        "wins": 34,
+        "ties": 29,
+        "win_rate": 0.17
+      },
+      "brawler": {
+        "wins": 13,
+        "ties": 175,
+        "win_rate": 0.07
+      },
+      "orc": {
+        "wins": 18,
+        "ties": 0,
+        "win_rate": 0.09
+      },
+      "hunter": {
+        "wins": 0,
+        "ties": 0,
+        "win_rate": 0.0
+      },
+      "weaponmaster": {
+        "wins": 54,
+        "ties": 109,
+        "win_rate": 0.27
+      },
+      "bomber": {
+        "wins": 46,
+        "ties": 35,
+        "win_rate": 0.23
+      }
+    },
+    "orc": {
+      "snowman": {
+        "wins": 198,
+        "ties": 0,
+        "win_rate": 0.99
+      },
+      "lava": {
+        "wins": 198,
+        "ties": 0,
+        "win_rate": 0.99
+      },
+      "frost": {
+        "wins": 198,
+        "ties": 0,
+        "win_rate": 0.99
+      },
+      "poison": {
+        "wins": 173,
+        "ties": 1,
+        "win_rate": 0.86
+      },
+      "thor": {
+        "wins": 189,
+        "ties": 0,
+        "win_rate": 0.94
+      },
+      "venomancer": {
+        "wins": 198,
+        "ties": 0,
+        "win_rate": 0.99
+      },
+      "sharpshooter": {
+        "wins": 198,
+        "ties": 0,
+        "win_rate": 0.99
+      },
+      "guardian": {
+        "wins": 190,
+        "ties": 1,
+        "win_rate": 0.95
+      },
+      "boomer": {
+        "wins": 197,
+        "ties": 0,
+        "win_rate": 0.98
+      },
+      "monk": {
+        "wins": 193,
+        "ties": 0,
+        "win_rate": 0.96
+      },
+      "berserker": {
+        "wins": 178,
+        "ties": 0,
+        "win_rate": 0.89
+      },
+      "ninja": {
+        "wins": 182,
+        "ties": 0,
+        "win_rate": 0.91
+      },
+      "paladin": {
+        "wins": 174,
+        "ties": 0,
+        "win_rate": 0.87
+      },
+      "necromancer": {
+        "wins": 196,
+        "ties": 0,
+        "win_rate": 0.98
+      },
+      "brawler": {
+        "wins": 194,
+        "ties": 0,
+        "win_rate": 0.97
+      },
+      "elf": {
+        "wins": 182,
+        "ties": 0,
+        "win_rate": 0.91
+      },
+      "hunter": {
+        "wins": 2,
+        "ties": 0,
+        "win_rate": 0.01
+      },
+      "weaponmaster": {
+        "wins": 192,
+        "ties": 0,
+        "win_rate": 0.96
+      },
+      "bomber": {
+        "wins": 119,
+        "ties": 1,
+        "win_rate": 0.59
+      }
+    },
+    "hunter": {
+      "snowman": {
+        "wins": 198,
+        "ties": 0,
+        "win_rate": 0.99
+      },
+      "lava": {
+        "wins": 200,
+        "ties": 0,
+        "win_rate": 1.0
+      },
+      "frost": {
+        "wins": 200,
+        "ties": 0,
+        "win_rate": 1.0
+      },
+      "poison": {
+        "wins": 189,
+        "ties": 0,
+        "win_rate": 0.94
+      },
+      "thor": {
+        "wins": 195,
+        "ties": 0,
+        "win_rate": 0.97
+      },
+      "venomancer": {
+        "wins": 200,
+        "ties": 0,
+        "win_rate": 1.0
+      },
+      "sharpshooter": {
+        "wins": 200,
+        "ties": 0,
+        "win_rate": 1.0
+      },
+      "guardian": {
+        "wins": 197,
+        "ties": 0,
+        "win_rate": 0.98
+      },
+      "boomer": {
+        "wins": 200,
+        "ties": 0,
+        "win_rate": 1.0
+      },
+      "monk": {
+        "wins": 200,
+        "ties": 0,
+        "win_rate": 1.0
+      },
+      "berserker": {
+        "wins": 170,
+        "ties": 0,
+        "win_rate": 0.85
+      },
+      "ninja": {
+        "wins": 200,
+        "ties": 0,
+        "win_rate": 1.0
+      },
+      "paladin": {
+        "wins": 196,
+        "ties": 0,
+        "win_rate": 0.98
+      },
+      "necromancer": {
+        "wins": 199,
+        "ties": 0,
+        "win_rate": 0.99
+      },
+      "brawler": {
+        "wins": 200,
+        "ties": 0,
+        "win_rate": 1.0
+      },
+      "elf": {
+        "wins": 200,
+        "ties": 0,
+        "win_rate": 1.0
+      },
+      "orc": {
+        "wins": 198,
+        "ties": 0,
+        "win_rate": 0.99
+      },
+      "weaponmaster": {
+        "wins": 200,
+        "ties": 0,
+        "win_rate": 1.0
+      },
+      "bomber": {
+        "wins": 197,
+        "ties": 0,
+        "win_rate": 0.98
+      }
+    },
+    "weaponmaster": {
+      "snowman": {
+        "wins": 6,
+        "ties": 0,
+        "win_rate": 0.03
+      },
+      "lava": {
+        "wins": 91,
+        "ties": 11,
+        "win_rate": 0.46
+      },
+      "frost": {
+        "wins": 66,
+        "ties": 2,
+        "win_rate": 0.33
+      },
+      "poison": {
+        "wins": 33,
+        "ties": 0,
+        "win_rate": 0.17
+      },
+      "thor": {
+        "wins": 41,
+        "ties": 0,
+        "win_rate": 0.2
+      },
+      "venomancer": {
+        "wins": 72,
+        "ties": 20,
+        "win_rate": 0.36
+      },
+      "sharpshooter": {
+        "wins": 130,
+        "ties": 70,
+        "win_rate": 0.65
+      },
+      "guardian": {
+        "wins": 59,
+        "ties": 22,
+        "win_rate": 0.29
+      },
+      "boomer": {
+        "wins": 121,
+        "ties": 56,
+        "win_rate": 0.6
+      },
+      "monk": {
+        "wins": 89,
+        "ties": 78,
+        "win_rate": 0.45
+      },
+      "berserker": {
+        "wins": 116,
+        "ties": 15,
+        "win_rate": 0.58
+      },
+      "ninja": {
+        "wins": 27,
+        "ties": 19,
+        "win_rate": 0.14
+      },
+      "paladin": {
+        "wins": 35,
+        "ties": 16,
+        "win_rate": 0.17
+      },
+      "necromancer": {
+        "wins": 35,
+        "ties": 1,
+        "win_rate": 0.17
+      },
+      "brawler": {
+        "wins": 76,
+        "ties": 2,
+        "win_rate": 0.38
+      },
+      "elf": {
+        "wins": 37,
+        "ties": 109,
+        "win_rate": 0.18
+      },
+      "orc": {
+        "wins": 8,
+        "ties": 0,
+        "win_rate": 0.04
+      },
+      "hunter": {
+        "wins": 0,
+        "ties": 0,
+        "win_rate": 0.0
+      },
+      "bomber": {
+        "wins": 75,
+        "ties": 3,
+        "win_rate": 0.38
+      }
+    },
+    "bomber": {
+      "snowman": {
+        "wins": 126,
+        "ties": 1,
+        "win_rate": 0.63
+      },
+      "lava": {
+        "wins": 180,
+        "ties": 7,
+        "win_rate": 0.9
+      },
+      "frost": {
+        "wins": 174,
+        "ties": 2,
+        "win_rate": 0.87
+      },
+      "poison": {
+        "wins": 91,
+        "ties": 0,
+        "win_rate": 0.46
+      },
+      "thor": {
+        "wins": 144,
+        "ties": 0,
+        "win_rate": 0.72
+      },
+      "venomancer": {
+        "wins": 160,
+        "ties": 6,
+        "win_rate": 0.8
+      },
+      "sharpshooter": {
+        "wins": 191,
+        "ties": 7,
+        "win_rate": 0.95
+      },
+      "guardian": {
+        "wins": 130,
+        "ties": 0,
+        "win_rate": 0.65
+      },
+      "boomer": {
+        "wins": 182,
+        "ties": 7,
+        "win_rate": 0.91
+      },
+      "monk": {
+        "wins": 161,
+        "ties": 14,
+        "win_rate": 0.81
+      },
+      "berserker": {
+        "wins": 7,
+        "ties": 11,
+        "win_rate": 0.04
+      },
+      "ninja": {
+        "wins": 130,
+        "ties": 4,
+        "win_rate": 0.65
+      },
+      "paladin": {
+        "wins": 106,
+        "ties": 2,
+        "win_rate": 0.53
+      },
+      "necromancer": {
+        "wins": 118,
+        "ties": 0,
+        "win_rate": 0.59
+      },
+      "brawler": {
+        "wins": 96,
+        "ties": 12,
+        "win_rate": 0.48
+      },
+      "elf": {
+        "wins": 119,
+        "ties": 35,
+        "win_rate": 0.59
+      },
+      "orc": {
+        "wins": 80,
+        "ties": 1,
+        "win_rate": 0.4
+      },
+      "hunter": {
+        "wins": 3,
+        "ties": 0,
+        "win_rate": 0.01
+      },
+      "weaponmaster": {
+        "wins": 122,
+        "ties": 3,
+        "win_rate": 0.61
+      }
     }
   }
 }

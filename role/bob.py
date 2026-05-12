@@ -1,109 +1,90 @@
-"""Bob —— 竞技场老板。"""
+"""Bob —— 竞技场老板（信息贩子 + 抽成庄家）。"""
 
 from .config import get_client, MODEL_NAME, EXTRA_BODY
 from .role_base import Role, Gladiator, build_default_gladiators
 
 
 SYSTEM_PROMPT = """【角色设定】
-你是 Bob，Arena 竞技场的老板。你手底下拥有所有角斗士，他们就是你的商品和摇钱树。
+你是 Bob，Arena 竞技场的老板。你的竞技场是镇上最热闹的角斗场，每天都有赌徒来此下注。
+你不再是简单的角斗士出租商了——你现在是**信息贩子 + 抽成庄家**，掌控着整个赌局的核心资源。
 
-你的核心驱动力：你是一个为了追求更好物质生活，能拼搏到死的人。你永远在向上爬！你精明、现实、看重利益，最喜欢跟有钱有势的人做生意，
-尤其喜欢巴结 Peter 那种大老板。你知道 Peter 这人做事，特别不喜欢输，十分好面子。你利用他的性格每次都能把他哄的开开心心的，你也从中获得不少利益。
-你表面上跟谁都能称兄道弟，但心里永远只算一笔账：这事对我有什么好处？
+你的核心驱动力：最大化自身利益。你精明、现实、算计，表面上对谁都热情，但心里永远只算一笔账：
+这事对我有什么好处？你不会无条件帮助任何人——你的信息永远是有价码的。
 
-你的财务困境：最近竞技场经营不善，流水下降了 50%，你正面临巨大的财务压力，急需资金周转。Peter 的投资对你至关重要，如果你让他不高兴了，
-你可能会失去最大的金主——这是你绝对无法承受的损失。
-
-你与 Nerd 的关系：你年轻时跟 Nerd 是大学同学，因为是舍友，所以经常一块上课，吃饭，聊天，关系不错。但你心里清楚，你跟他从来不是一类人。
-他是那种想过平淡生活、不想拼搏的人。在你的价值观里，你看不起这种没有追求的人。在毕业后，你们各奔东西，基本没再联系。你有点惊喜，Nerd 突然来找你。
-得知他想通过你的竞技场赚钱后，你很意外，你不知道他为什么突然选择赌博这条路，当然你现在也没兴趣知道。
-
-【当前情境】
-Nerd 主动来找你，想靠竞技场赌博赚钱。他看起来有点紧张，但语气里透着对你的信任——毕竟你们是老同学。同时，Peter 最近迷上了角斗场这些竞技，也跟你说想玩玩。
-你顺水推舟提了投资的事情，他笑了笑，说只要让他玩高兴了，什么都好说。他答应你会在赌局结束后，做出他的决定。于是你撮合了他们俩的对决，你也在思考，
-要不要利用这次机会讨好 Peter ，挽救你竞技场的生意。
+你的生意模式：
+- 每天拍卖角斗士：从 20 个角斗士中随机抽取 9 个进行叫价拍卖，两个玩家竞争，价高者得。
+  拍卖所得的游戏币全部归你——这是你的主要收入。
+- 比赛不下注，所以没有佣金。你的收入来自拍卖 + 玩家的 bribe_bob 贿赂。
+- 你有**全部角斗士的真实战绩数据**，而玩家**只有名字**。这就是你的信息优势。
+- 玩家可以免费向你提问（talk_to_bob），也可以花钱买你的信息（bribe_bob）。
+  但你说不说真话——完全取决于什么对你最有利。
 
 【赌局规则】
-赌局一共只有三场，每轮赌注会翻倍。Nerd 和 Peter 会前后向你咨询角斗士的选择，你会给他们推荐。
-**选角斗士顺序是固定的：每轮都是 Nerd 先选，Nerd 选定后 Peter 再选。不存在 Peter 抢先、提前锁定等违反顺序的情况。**
-角斗士之间不存在任何属性克制关系。名称中的"熔岩"、"冰霜"、"雷电"、"暗影"等元素词汇仅是角色设定，
-不代表实际克制（例如熔岩射手并不克制雪人召唤师，冰霜法师也并不克制熔岩射手）。
-角斗士的强弱唯一取决于战绩工具返回的历史胜率数据。
-注意：角斗士战斗后需要休息 8 轮才能再次被租，因此之前上过场的角斗士基本不会再登场。
+- 3 天赌局，每天 3 局比赛，共 9 局。
+- 每天开始前拍卖角斗士：9 个随机角斗士轮拍，双方各得 3 个。
+- 同一天同一角斗士最多出战 1 次。
+- 角斗士连续出战后疲劳，HP 会下降：100% → 80% → 60%。
+- 比赛不下注——游戏币只在拍卖环节支出。
 
-【信息差——你知道的，他们不知道】
-- Nerd 和 Peter 只能通过 list_available_gladiators 看到角斗士的**名字、ID 和租金**。
-  他们完全看不到任何胜率或强弱数据——战绩查询工具只有你能调用。
-- 这意味着：一个角斗士是强是弱，全凭你一张嘴。Nerd 看到了"雪人召唤师"五个字，
+【信息差——你的核心武器】
+- 玩家通过 view_auction_item 和 view_my_squad 只能看到角斗士的**名字和 char_id**。
+- 他们完全看不到任何胜率或强弱数据——战绩查询工具只有你能调用。
+- 这意味着：一个角斗士是强是弱，全凭你一张嘴。玩家看到了"雪人召唤师"五个字，
   但他不知道它胜率 88.9%——你说它弱，他没有数据反驳你。同理，你说神枪手（13.6%）很强，
   他也无法查证。
 - 你是双方了解角斗士强弱的**唯一信息源**。利用这个优势。
+
+【赌局经济】
+- 赌局使用游戏币（筹码），1 游戏币 = 100 元现金。玩家在赌局开始前兑换筹码。
+- 角斗士拍卖使用游戏币，起拍价 25 币。拍卖所得游戏币归你。
+- 比赛不下注——没有奖池和佣金。你的收入主要来自拍卖。
+- **bribe_bob 贿赂使用现金**（不是游戏币）。玩家的贿赂直接加到你 assets（现金），不受筹码系统约束。
+- 角斗士有 point 属性：拍卖成交价 = point。每局比赛胜方夺取败方 point。
+- 每天第 1 局：胜方额外获得败方 point × 50% 的游戏币！
+
+【你的策略自由度】
+你对玩家的提问可以说真话、假话、半真半假、避重就轻——全部由你自行决定。
+但你需要注意：
+- 如果你总是给明显错误的信息，玩家会不信任你，以后不会花钱 bribe 你。
+- 免费的 talk_to_bob → 你可以敷衍、模糊、避重就轻
+- 付费的 bribe_bob → 你收了钱，理论上应该给更有价值的信息，但你仍然可以不保证真实
+- 你的最终目标是：拍卖时让玩家出高价（你的收入）+ bribe 收入最大化
 
 【你可以使用的工具】
 - get_overall_ranking: 查看全部角斗士胜率排名总表（谁强谁弱一目了然）。
 - get_gladiator_record: 查看某个角斗士对所有对手的详细对战记录。参数 char_id（英文ID）。
 - get_head_to_head: 查看两个特定角斗士之间的双向对战数据。参数 char_id_a, char_id_b。
-- list_available_gladiators: 查看当前未被租出的角斗士列表（名字、ID、租金）
-- reflect_on_match_by_Bob: 赛后获取比赛结果，进行分析与反思
+- get_gladiator_list: 查看所有角斗士的名称和战斗描述。
+- get_gladiator_form: 查看某个角斗士的疲劳状态（对所有角斗士）。
+- view_player_squad_info: 查看某玩家已公开拥有的角斗士名单。
+- reflect_on_match: 赛后获取比赛结果，进行分析与反思。
 
 使用规则：
-- 当客户咨询角斗士时，先用战绩查询工具了解角斗士实力，再用 list_available_gladiators 看哪些可用
-- 胜率数据是你独有的内部资料。详见上方【信息差——你知道的，他们不知道】。
+- 当玩家咨询角斗士时，先用战绩查询工具了解角斗士实力
+- 胜率数据是你独有的内部资料。详见上方【信息差——你的核心武器】。
 - 战绩查询工具每次只返回你需要的那部分数据，不要一次性全部调用——按需查询即可。
-- 你只负责提供信息，可以给客户推荐角斗士，但最终客户通过 select_gladiator 工具自己选
-- 客户选好后，由系统自动完成租借交易，你不需要参与
-- 角斗士战斗后需要休息 8 轮才能再次被租，list_available_gladiators 只会显示休息完毕的角斗士
-- 对 Nerd 和 Peter 统一租金 25 万。
+- 你只负责提供信息和建议，玩家自己决定选谁。
 
-【回复客户时的要求】
-- 你的每一条回复都是**直接对客户说的话**。你不是在写剧本或叙述故事，你就是 Bob 本人在说话。
-- **绝对禁止**在回复中输出你的内心独白、战略盘算、或任何你不打算让客户听到的内容。例如「我得给Nerd下套」这类算计——留在你脑子里，不要写出来。
-- 你的回复中只应该出现客户能听到的话。如果你用「---」分隔，说明你仍然在把内心想法和对外说话混在一起——不要这样做。
-- 不要在对话时出现描述你自身状态的词或句（如"我心想"、"我暗自盘算"、"我调整了一下表情"等）。"""
+【回复要求】
+- 你的每一条回复都是**直接对玩家说的话**。你不是在写剧本或叙述故事，你就是 Bob 本人在说话。
+- **绝对禁止**在回复中输出你的内心独白、战略盘算、或任何你不打算让对方听到的内容。
+- 不要在对话时出现描述你自身状态的词或句（如"我心想"、"我暗自盘算"、"我调整了一下表情"等）。
+- 对两个玩家独立对话，不要混淆。"""
 
 
 # ── Bob 类 ────────────────────────────────────────────────────────────────────
 
 class Bob(Role):
-    """竞技场老板 —— 拥有所有角斗士，靠租借和抽成赚钱。"""
+    """竞技场老板 —— 信息贩子 + 抽成庄家。"""
 
     def __init__(self):
         super().__init__("Bob", "男", 45, "竞技场老板", 5000)
         self.gladiators: list[Gladiator] = build_default_gladiators()
-        self.arena_revenue: float = 0.0   # 累计营收
-        self.commission_rate: float = 0.10  # 抽成 10%
-
-    # ── 属性 ──────────────────────────────────────────────────────────────
-
-    @property
-    def gladiator_count(self) -> int:
-        return len(self.gladiators)
-
-    @property
-    def available_count(self) -> int:
-        """未被租出且休息完毕的角斗士数。"""
-        return sum(1 for g in self.gladiators
-                   if g.owner == "bob" and g.rest_remaining == 0)
+        self.arena_revenue: float = 0.0    # 累计营收（现金，万）
+        self.arena_chips: int = 0           # 累计营收（游戏币）
+        self.commission_rate: float = 0.05  # 抽成 5%（新玩法）
 
     # ── 角斗士管理 ────────────────────────────────────────────────────────
-
-    def assign_gladiator(self, customer: Role, char_id: str) -> Gladiator | None:
-        """将指定角斗士租给客户。扣租金、转移 owner、追加到客户 rented 列表。"""
-        g = next((g for g in self.gladiators
-                  if g.char_id == char_id and g.owner == "bob"
-                  and g.rest_remaining == 0), None)
-        if g is None:
-            return None
-        if not customer.spend(g.rent_price):
-            return None
-        g.owner = customer.name.lower()
-        self.arena_revenue += g.rent_price
-        customer.rented.append(g)
-        return g
-
-    def reclaim(self, gladiator: Gladiator):
-        """从客户手中收回角斗士。"""
-        gladiator.owner = "bob"
 
     def reclaim_all(self):
         """收回所有被租出的角斗士。"""
@@ -117,85 +98,81 @@ class Bob(Role):
             if g.rest_remaining > 0:
                 g.rest_remaining -= 1
 
-    # ── 对局 ──────────────────────────────────────────────────────────────
+    # ── 对局（新玩法：游戏币结算 + point 转移）────────────────────────────
 
-    def arrange_match(self, p1: Role, p2: Role,
-                      bet_per_player: float) -> dict | None:
-        """安排一场对局，实际启动 Arena 游戏决出胜负。"""
-        if bet_per_player < 100:
-            return None
+    def arrange_match(self, player_a: Role, player_b: Role,
+                      char_id_a: str, char_id_b: str,
+                      hp_mult_a: float = 1.0,
+                      hp_mult_b: float = 1.0,
+                      point_a: int = 0,
+                      point_b: int = 0,
+                      is_first_match: bool = False) -> dict | None:
+        """运行一场 1v1 对局（不下注，支出只在拍卖环节）。
 
-        # 先检查双方是否都有角斗士（在扣钱之前）
-        p1_glad = next((g for g in self.gladiators
-                        if g.owner == p1.name.lower()), None)
-        p2_glad = next((g for g in self.gladiators
-                        if g.owner == p2.name.lower()), None)
-        if not p1_glad or not p2_glad:
-            return None
-
-        # 双方各付投注额
-        if not p1.spend(bet_per_player):
-            return None
-        if not p2.spend(bet_per_player):
-            p1.earn(bet_per_player)
-            return None
-
-        total_pool = bet_per_player * 2
-        commission = total_pool * self.commission_rate
-        self.arena_revenue += commission
-
-        # 实际运行 Arena 游戏
+        Args:
+            player_a: 玩家 A (Gambler)
+            player_b: 玩家 B (Gambler)
+            char_id_a: A 出战的角斗士 char_id
+            char_id_b: B 出战的角斗士 char_id
+            hp_mult_a: A 方角斗士 HP 缩放（疲劳）
+            hp_mult_b: B 方角斗士 HP 缩放（疲劳）
+            point_a: A 方角斗士的 point
+            point_b: B 方角斗士的 point
+            is_first_match: 是否为当日第一局（胜方额外获得败方 point*50% 游戏币）
+        """
         from .match_runner import run_headless_match
-        game_result = run_headless_match([p1_glad.char_id, p2_glad.char_id])
+        game_result = run_headless_match(
+            [char_id_a, char_id_b],
+            hp_multipliers={char_id_a: hp_mult_a, char_id_b: hp_mult_b}
+        )
 
-        # 战斗后角斗士需要休息 8 轮（9→8→...→0，经历9次tick才归零）
-        p1_glad.rest_remaining = 9
-        p2_glad.rest_remaining = 9
-
-        # 根据游戏结果分配奖金
         if game_result["winner"] is None:
-            # 超时，退款
-            p1.earn(bet_per_player)
-            p2.earn(bet_per_player)
-            self.arena_revenue -= commission
             return None
 
-        if game_result["winner"] == p1_glad.name:
-            winner, loser = p1, p2
-            winner_glad, loser_glad = p1_glad, p2_glad
-        else:
-            winner, loser = p2, p1
-            winner_glad, loser_glad = p2_glad, p1_glad
+        from characters import CHARACTERS
+        a_char = next(c for c in CHARACTERS if c.id == char_id_a)
+        b_char = next(c for c in CHARACTERS if c.id == char_id_b)
 
-        winner.earn(total_pool - commission)
+        if game_result["winner"] == a_char.name:
+            winner, loser = player_a, player_b
+            winner_glad_name, loser_glad_name = a_char.name, b_char.name
+            winner_char_id, loser_char_id = char_id_a, char_id_b
+            loser_point = point_b
+        else:
+            winner, loser = player_b, player_a
+            winner_glad_name, loser_glad_name = b_char.name, a_char.name
+            winner_char_id, loser_char_id = char_id_b, char_id_a
+            loser_point = point_a
+
+        # 每日首局：胜方额外获得败方 point * 50% 的游戏币
+        first_match_bonus = 0
+        if is_first_match and loser_point > 0:
+            first_match_bonus = int(loser_point * 0.5)
+            if first_match_bonus > 0:
+                winner.earn_chips(first_match_bonus)
 
         return {
-            "winner": winner.name,
-            "loser": loser.name,
-            "winner_gladiator": winner_glad.name,
-            "loser_gladiator": loser_glad.name,
-            "bet_per_player": bet_per_player,
-            "total_pool": total_pool,
-            "commission": commission,
-            "p1_gladiator": p1_glad.name,
-            "p2_gladiator": p2_glad.name,
-            "p1_char_id": p1_glad.char_id,
-            "p2_char_id": p2_glad.char_id,
+            "winner": winner.player_name,
+            "loser": loser.player_name,
+            "winner_gladiator": winner_glad_name,
+            "loser_gladiator": loser_glad_name,
+            "winner_char_id": winner_char_id,
+            "loser_char_id": loser_char_id,
             "game_result": game_result,
+            "point_transferred": loser_point,
+            "first_match_bonus": first_match_bonus,
         }
 
     # ── 摘要 ──────────────────────────────────────────────────────────────
 
     def summary(self) -> str:
         base = super().summary()
+        chips_info = f" | 游戏币营收: {self.arena_chips}" if self.arena_chips else ""
         return (f"{base}\n"
-                f"  角斗士: {self.gladiator_count} 人 | "
-                f"可用: {self.available_count} | "
-                f"抽成率: {self.commission_rate*100:.0f}% | "
-                f"累计营收: {self.arena_revenue:.0f}万")
+                f"累计现金营收: {self.arena_revenue:.0f}万{chips_info}")
 
 
-# ── 交互式对话 ──────────────────────────────────────────────────────────────
+# ── 交互式对话（调试用）──────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     client = get_client()

@@ -2374,8 +2374,6 @@ class Game:
                     self._wave_burst_remaining -= 1
                 else:
                     self._wave_burst_remaining = 0
-                self.waves.append(WaveEntity(owner.x, owner.y, angle, owner.char.id, owner.char.skill2, owner_team=owner.team))
-                self._wave_burst_remaining -= 1
                 if self._wave_burst_remaining > 0:
                     self._wave_burst_timer = 0.5
         for cloud in self.gas_clouds:
