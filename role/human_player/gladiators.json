@@ -1,0 +1,182 @@
+[
+  {
+    "index": 1,
+    "name": "雪人召唤师",
+    "char_id": "snowman",
+    "win_rate": 0.704,
+    "total_matches": 3800,
+    "ties": 4,
+    "fatigue": 1.0
+  },
+  {
+    "index": 2,
+    "name": "熔岩射手",
+    "char_id": "lava",
+    "win_rate": 0.197,
+    "total_matches": 3800,
+    "ties": 423,
+    "fatigue": 1.0
+  },
+  {
+    "index": 3,
+    "name": "冰霜法师",
+    "char_id": "frost",
+    "win_rate": 0.392,
+    "total_matches": 3800,
+    "ties": 163,
+    "fatigue": 1.0
+  },
+  {
+    "index": 4,
+    "name": "毒雾术士",
+    "char_id": "poison",
+    "win_rate": 0.66,
+    "total_matches": 3800,
+    "ties": 89,
+    "fatigue": 1.0
+  },
+  {
+    "index": 5,
+    "name": "雷神",
+    "char_id": "thor",
+    "win_rate": 0.556,
+    "total_matches": 3800,
+    "ties": 69,
+    "fatigue": 1.0
+  },
+  {
+    "index": 6,
+    "name": "制毒师",
+    "char_id": "venomancer",
+    "win_rate": 0.236,
+    "total_matches": 3800,
+    "ties": 573,
+    "fatigue": 1.0
+  },
+  {
+    "index": 7,
+    "name": "神枪手",
+    "char_id": "sharpshooter",
+    "win_rate": 0.014,
+    "total_matches": 3800,
+    "ties": 807,
+    "fatigue": 1.0
+  },
+  {
+    "index": 8,
+    "name": "盾卫",
+    "char_id": "guardian",
+    "win_rate": 0.574,
+    "total_matches": 3800,
+    "ties": 144,
+    "fatigue": 1.0
+  },
+  {
+    "index": 9,
+    "name": "回旋猎手",
+    "char_id": "boomer",
+    "win_rate": 0.078,
+    "total_matches": 3800,
+    "ties": 679,
+    "fatigue": 1.0
+  },
+  {
+    "index": 10,
+    "name": "武僧",
+    "char_id": "monk",
+    "win_rate": 0.144,
+    "total_matches": 3800,
+    "ties": 991,
+    "fatigue": 1.0
+  },
+  {
+    "index": 11,
+    "name": "狂战士",
+    "char_id": "berserker",
+    "win_rate": 0.497,
+    "total_matches": 3800,
+    "ties": 372,
+    "fatigue": 1.0
+  },
+  {
+    "index": 12,
+    "name": "忍者",
+    "char_id": "ninja",
+    "win_rate": 0.471,
+    "total_matches": 3800,
+    "ties": 303,
+    "fatigue": 1.0
+  },
+  {
+    "index": 13,
+    "name": "圣骑士",
+    "char_id": "paladin",
+    "win_rate": 0.63,
+    "total_matches": 3800,
+    "ties": 104,
+    "fatigue": 1.0
+  },
+  {
+    "index": 14,
+    "name": "亡灵法师",
+    "char_id": "necromancer",
+    "win_rate": 0.505,
+    "total_matches": 3800,
+    "ties": 83,
+    "fatigue": 1.0
+  },
+  {
+    "index": 15,
+    "name": "潮汐使者",
+    "char_id": "brawler",
+    "win_rate": 0.414,
+    "total_matches": 3800,
+    "ties": 432,
+    "fatigue": 1.0
+  },
+  {
+    "index": 16,
+    "name": "森林精灵",
+    "char_id": "elf",
+    "win_rate": 0.218,
+    "total_matches": 3800,
+    "ties": 1359,
+    "fatigue": 1.0
+  },
+  {
+    "index": 17,
+    "name": "兽人战士",
+    "char_id": "orc",
+    "win_rate": 0.882,
+    "total_matches": 3800,
+    "ties": 3,
+    "fatigue": 1.0
+  },
+  {
+    "index": 18,
+    "name": "暗夜猎手",
+    "char_id": "hunter",
+    "win_rate": 0.984,
+    "total_matches": 3800,
+    "ties": 0,
+    "fatigue": 1.0
+  },
+  {
+    "index": 19,
+    "name": "武器大师",
+    "char_id": "weaponmaster",
+    "win_rate": 0.294,
+    "total_matches": 3800,
+    "ties": 424,
+    "fatigue": 1.0
+  },
+  {
+    "index": 20,
+    "name": "炸弹专家",
+    "char_id": "bomber",
+    "win_rate": 0.611,
+    "total_matches": 3800,
+    "ties": 112,
+    "fatigue": 1.0
+  }
+]

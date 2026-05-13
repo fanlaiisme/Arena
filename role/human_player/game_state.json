@@ -1,0 +1,12 @@
+{
+  "player_a": {
+    "name": "玩家A",
+    "chips": 800,
+    "reward_pool": 0
+  },
+  "player_b": {
+    "name": "玩家B",
+    "chips": 800,
+    "reward_pool": 0
+  }
+}
