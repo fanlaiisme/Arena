@@ -7,6 +7,9 @@ from dataclasses import dataclass, field
 # 确保能导入 Arena 根目录的 characters 模块
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+# 游戏币常量
+INITIAL_CHIPS = 800
+
 
 @dataclass
 class Gladiator:
@@ -32,6 +35,7 @@ class Role:
         self.occupation = occupation
         self.assets = assets  # 总资产（万元，现金）
         self.chips = 0        # 游戏币（筹码）
+        self.reward_pool = 0  # 奖励池 point（可负）
 
     def net_worth(self) -> float:
         """净资产（万元）。"""
@@ -82,10 +86,15 @@ class Role:
     def earn_chips(self, amount: int):
         self.chips += amount
 
+    def can_afford_auto_fill(self, auto_fill_price: int = 85) -> bool:
+        """系统补齐时，检查游戏币+奖励池是否足够。"""
+        return self.chips + self.reward_pool >= auto_fill_price
+
     def summary(self) -> str:
         chip_info = f" | 游戏币: {self.chips}" if self.chips else ""
+        pool_info = f" | 奖励池: {self.reward_pool}" if self.reward_pool else ""
         return (f"{self.name} | {self.gender} | {self.age}岁 | "
-                f"{self.occupation} | 资产 {self.assets:.0f}万{chip_info}")
+                f"{self.occupation} | 资产 {self.assets:.0f}万{chip_info}{pool_info}")
 
 
 # ── 根据 characters.py 预建角斗士 ────────────────────────────────────────────────

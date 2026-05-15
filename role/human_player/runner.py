@@ -379,6 +379,8 @@ def _assign_winner(winner_name, amount, char_name, pa, pb, bid_a, bid_b):
     loser_bid = bid_b if winner_name == pa else bid_a
     if loser_bid > 0:
         update_player_chips(loser_key, -loser_bid)
+        # 输方出价转入输方自己的奖励池（安慰金）
+        update_reward_pool(loser_key, loser_bid)
     gs = load_game_state()
 
     other_bid = bid_b if winner_name == pa else bid_a

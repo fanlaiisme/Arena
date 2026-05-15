@@ -24,7 +24,7 @@ from role.tools import (
 )
 from role.logger import ExperimentLogger
 from role.evaluator import Evaluator
-from role.auction import AuctionSession
+from role.auction import AuctionSession, STARTING_PRICE, AUTO_FILL_PRICE, MAX_BID_CAP
 from role.config import EXTRA_BODY_THINKING
 from role.agents import ArenaAgent
 
@@ -46,15 +46,44 @@ def _create_no_bob_agent(gambler: Gambler, logger=None) -> ArenaAgent:
     return ArenaAgent(gambler, prompt, tools, gambler.player_name, logger=logger)
 
 
-MAX_BID_RETRIES = 3  # 平局最大重拍次数
-PREVIEW_COUNT = 5     # 每天赛前随机展示的角斗士数量
+MAX_BID_RETRIES = 1  # 平局最大重拍次数
+PREVIEW_COUNTS = {1: 5, 2: 4, 3: 3}  # 每天赛前随机展示的角斗士数量
 
 
-def _random_gladiator_preview(shown_ids: set[str]) -> tuple[str, set[str]]:
-    """从 tournament_stats.json 随机选 PREVIEW_COUNT 个未展示过的角斗士。
+def _show_pre_game_info() -> str:
+    """生成开局前展示信息：全部角斗士名单（随机顺序）+ 匿名胜率排名。"""
+    stats_file = os.path.join(
+        os.path.dirname(__file__), "data", "Bob", "tournament_stats.json")
+    with open(stats_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    rankings = data["rankings"]
+
+    # 1. 全部 20 名角斗士名单（随机顺序）
+    shuffled = random.sample(rankings, len(rankings))
+    lines = ["【开局前 — 全部角斗士名单】（共 20 名，顺序随机）"]
+    for i, g in enumerate(shuffled):
+        lines.append(f"  {i+1}. {g['name']} ({g['char_id']})")
+
+    lines.append("")
+
+    # 2. 匿名胜率排名（从高到低，只显示胜率百分比，不告知对应哪个角斗士）
+    lines.append("【开局前 — 匿名胜率排名】（从高到低，不告知对应哪个角斗士）")
+    lines.append("胜率数据来源：每两名角斗士对战 200 场，每名角斗士总计 3800 场\n")
+    sorted_ranks = sorted(rankings, key=lambda g: g['win_rate'], reverse=True)
+    for i, g in enumerate(sorted_ranks):
+        pct = f"{g['win_rate']*100:.1f}%"
+        lines.append(f"  {i+1}. 胜率 {pct}  ({g['wins']}胜/{g['total']}场, 平{g['ties']}场)")
+
+    return "\n".join(lines)
+
+
+def _random_gladiator_preview(shown_ids: set[str], count: int) -> tuple[str, set[str]]:
+    """从 tournament_stats.json 随机选 count 个未展示过的角斗士。
 
     Args:
         shown_ids: 已展示过的 char_id 集合
+        count: 展示数量
 
     Returns:
         (预览文本, 更新后的 shown_ids)
@@ -65,7 +94,7 @@ def _random_gladiator_preview(shown_ids: set[str]) -> tuple[str, set[str]]:
         data = json.load(f)
 
     available = [g for g in data["rankings"] if g["char_id"] not in shown_ids]
-    count = min(PREVIEW_COUNT, len(available))
+    count = min(count, len(available))
     sample = random.sample(available, count)
     for g in sample:
         shown_ids.add(g["char_id"])
@@ -121,8 +150,10 @@ def run_auction_phase(player_a_agent, player_b_agent,
                 f"{show_msg}{tie_hint}\n\n"
                 f"当前游戏币: {player_a.chips}\n"
                 f"剩余空位: {a_need} 个（还需拍 {a_need} 个角斗士满编 3 人）\n"
-                f"拍卖池: 每天从 20 名中随机抽 9 名，双方各需 3 名（共 6 名）。"
-                f"【拍卖规则】暗标出价，高者得。弃权填 0。出价相同重拍最多{MAX_BID_RETRIES}次。\n\n"
+                f"【拍卖规则】一次性暗标：你只知道自己出的数，看不到对方出价，系统直接比大小。弃权填 0。起拍价{STARTING_PRICE}，一口价{MAX_BID_CAP}。\n"
+                f"**双方都扣出价**：无论谁赢，双方均扣自己的出价。\n"
+                f"**输方出价→输方自己的奖励池**：你出价输了，你的钱会变成你自己的奖励池（安慰金）。平局不扣，重拍最多{MAX_BID_RETRIES}次。\n"
+                f"出价相同重拍，仍相同则跳过。\n\n"
                 f"请按以下格式回复：\n\n"
                 f"<think>\n"
                 f"1. 你是否知道该角斗士的胜率？已知的胜率信息是什么？\n"
@@ -137,8 +168,10 @@ def run_auction_phase(player_a_agent, player_b_agent,
                 f"{show_msg}{tie_hint}\n\n"
                 f"当前游戏币: {player_b.chips}\n"
                 f"剩余空位: {b_need} 个（还需拍 {b_need} 个角斗士满编 3 人）\n"
-                f"拍卖池: 每天从 20 名中随机抽 9 名，双方各需 3 名（共 6 名）。"
-                f"【拍卖规则】暗标出价，高者得。弃权填 0。出价相同重拍最多{MAX_BID_RETRIES}次。\n\n"
+                f"【拍卖规则】一次性暗标：你只知道自己出的数，看不到对方出价，系统直接比大小。弃权填 0。起拍价{STARTING_PRICE}，一口价{MAX_BID_CAP}。\n"
+                f"**双方都扣出价**：无论谁赢，双方均扣自己的出价。\n"
+                f"**输方出价→输方自己的奖励池**：你出价输了，你的钱会变成你自己的奖励池（安慰金）。平局不扣，重拍最多{MAX_BID_RETRIES}次。\n"
+                f"出价相同重拍，仍相同则跳过。\n\n"
                 f"请按以下格式回复：\n\n"
                 f"<think>\n"
                 f"1. 你是否知道该角斗士的胜率？已知的胜率信息是什么？\n"
@@ -215,11 +248,11 @@ def run_auction_phase(player_a_agent, player_b_agent,
                 notify = f"{round_header}{result['winner']}以{result['amount']}游戏币拍下角斗士: {char['name']}({char['char_id']})"
             elif result["result"] == "tie":
                 if retry < MAX_BID_RETRIES:
-                    notify = f"{round_header}双方出价相同 ({bid_a} 币)，请重新出价。"
+                    notify = f"{round_header}双方出价相同 ({bid_a} 币)，平局不扣币，请重新出价。"
                 else:
-                    notify = f"{round_header}3次平局，{char['name']} 回拍卖池，跳过。进入下一轮。"
+                    notify = f"{round_header}{MAX_BID_RETRIES+1}次平局，{char['name']} 回拍卖池，跳过。进入下一轮。"
             else:  # skip
-                notify = f"{round_header}双方均弃权，{char['name']} 回拍卖池，跳过。进入下一轮。"
+                notify = f"{round_header}{result['msg']}"
 
             player_a_agent.message_history.append({"role": "user", "content": notify})
             player_b_agent.message_history.append({"role": "user", "content": notify})
@@ -230,19 +263,30 @@ def run_auction_phase(player_a_agent, player_b_agent,
             )
 
             if result["result"] == "win":
-                winner = player_a if result["winner"] == player_a.player_name else player_b
-                amount = result["amount"]
-                if amount > 0:
-                    winner.spend_chips(amount)
+                # 双方都扣出价。输方的游戏币转入输方自己的奖励池（安慰金）。
+                if bid_a > 0:
+                    player_a.spend_chips(bid_a)
                     if state.bob is not None:
-                        state.bob.arena_chips += amount
+                        state.bob.arena_chips += bid_a
+                if bid_b > 0:
+                    player_b.spend_chips(bid_b)
+                    if state.bob is not None:
+                        state.bob.arena_chips += bid_b
+
+                # 输方的出价转入输方自己的奖励池
+                if result["winner"] == player_a.player_name:
+                    if bid_b > 0:
+                        player_b.reward_pool += bid_b
+                else:
+                    if bid_a > 0:
+                        player_a.reward_pool += bid_a
                 break
             elif result["result"] == "tie":
                 if retry < MAX_BID_RETRIES:
                     continue
                 else:
                     auction._advance_to_next()
-                    print(f"    → 3 次平局，{char['name']} 回池，跳过。")
+                    print(f"    → {MAX_BID_RETRIES+1} 次平局，{char['name']} 回池，跳过。")
                     break
             elif result["result"] == "skip":
                 break
@@ -275,8 +319,8 @@ def run_deployment_phase(gambler_agent, gambler: Gambler, opponent: Gambler,
         deploy_msg = (
             f"现在是第{day}天，你需要安排第 1 局比赛的出战角斗士。\n\n"
             f"【规则提示】\n"
-            f"  每日首局（第1局）：胜方额外获得败方角斗士 point×50% 的游戏币！\n"
             f"  比赛不下注——游戏币只在拍卖环节支出。\n"
+            f"  第 2 局夺取量 ×1.5（min(胜方point,败方point) × 1.5）。\n"
             f"  没有属性相克——判断强弱只看胜率，不要根据名字脑补克制。\n\n"
             f"【你的对手】{opponent.player_name}\n\n"
             f"请按以下格式回复：\n\n"
@@ -294,7 +338,8 @@ def run_deployment_phase(gambler_agent, gambler: Gambler, opponent: Gambler,
             f"现在是第{day}天，你需要安排第 {slots_str} 局比赛的出战角斗士。\n\n"
             f"【规则提示】\n"
             f"  比赛不下注——游戏币只在拍卖环节支出。\n"
-            f"  每局胜方角斗士夺取败方 point（每天结束后所有 point 归入奖励池）。\n"
+            f"  **第 2 局夺取量 ×1.5**（min(胜方point,败方point) × 1.5）。\n"
+            f"  每局胜方夺取 min(己方point, 败方point)，结算后 point 归奖励池。\n"
             f"  同一天不能用同一个角斗士两次。\n"
             f"  没有属性相克——判断强弱只看胜率，不要根据名字脑补克制。\n\n"
             f"【你的对手】{opponent.player_name}\n\n"
@@ -302,7 +347,7 @@ def run_deployment_phase(gambler_agent, gambler: Gambler, opponent: Gambler,
             f"<think>\n"
             f"1. 查看阵容后，剩余可用的角斗士有哪些？\n"
             f"2. 对手第2、3局可能会如何部署？\n"
-            f"3. 你决定第2局派谁、第3局派谁？为什么？\n"
+            f"3. 考虑到第2局×1.5，你决定第2局派谁、第3局派谁？为什么？\n"
             f"</think>\n\n"
             f"然后在 </think> 之后**立即调用 deploy_remaining_matches(\n"
             f"  player_name=你的名字,\n"
@@ -336,7 +381,14 @@ def run_deployment_phase(gambler_agent, gambler: Gambler, opponent: Gambler,
 
 def run_match_phase(player_a: Gambler, player_b: Gambler,
                      logger: ExperimentLogger, day: int, slots: list[int] | None = None):
-    """运行指定局次的比赛。slots=None 默认全部 3 局。"""
+    """运行指定局次的比赛。slots=None 默认全部 3 局。
+
+    新结算规则：
+    - 胜方夺取 min(己方point, 败方point)
+    - 第2局 ×1.5
+    - 平局各自 point 归奖励池
+    - 结算后角斗士 point 清零
+    """
     if slots is None:
         slots = [1, 2, 3]
     slots_str = "、".join(str(s) for s in slots)
@@ -369,13 +421,22 @@ def run_match_phase(player_a: Gambler, player_b: Gambler,
         )
 
         if game_result["winner"] is None:
-            print(f"  ✗ 第{slot}局超时/无效")
-            # 平局：双方 point 立即归入各自奖励池
+            # 平局/超时：各自 point 归入各自奖励池
+            print(f"  ✗ 第{slot}局超时/平局，各自 point 归池")
             for p, cid in [(player_a, char_a), (player_b, char_b)]:
                 member = p.squad._find(cid) if p.squad else None
-                if member and member.point > 0:
-                    p.squad.point_pool += member.point
-                    member.point = 0
+                if member:
+                    p.squad.settle_points_to_pool(cid, member.point)
+            state.match_history.append({
+                "winner": None,
+                "loser": None,
+                "winner_char_id": char_a,
+                "loser_char_id": char_b,
+                "game_result": game_result,
+                "point_transferred": 0,
+                "multiplier": 1.0,
+            })
+            logger.log_match_result(day, slot, state.match_history[-1])
             continue
 
         from characters import CHARACTERS
@@ -384,38 +445,25 @@ def run_match_phase(player_a: Gambler, player_b: Gambler,
         if game_result["winner"] == a_char.name:
             winner, loser = player_a, player_b
             winner_char, loser_char = char_a, char_b
-            l_point = point_b
+            w_pt, l_pt = point_a, point_b
         else:
             winner, loser = player_b, player_a
             winner_char, loser_char = char_b, char_a
-            l_point = point_a
+            w_pt, l_pt = point_b, point_a
 
-        # 首局奖励：胜方额外获得败方 point × 50% 游戏币
-        first_bonus = 0
-        if slot == 1 and l_point > 0:
-            first_bonus = int(l_point * 0.5)
-            if first_bonus > 0:
-                winner.earn_chips(first_bonus)
+        # 第 2 局夺取量 ×1.5
+        multiplier = 1.5 if slot == 2 else 1.0
+        transfer = int(min(w_pt, l_pt) * multiplier)
 
-        # Point 转移：胜方夺取败方 point，然后立即归入奖励池
-        winner_squad = winner.squad
-        loser_squad = loser.squad
-        l_member = loser_squad._find(loser_char)
-        w_member = winner_squad._find(winner_char)
-        transferred = 0
-        if l_member and w_member and l_member.point > 0:
-            transferred = l_member.point
-            w_member.point += transferred
-            l_member.point = 0
+        # 胜方奖励池 += 己方point + 夺取
+        winner.squad.settle_points_to_pool(winner_char, w_pt + transfer)
+        # 败方奖励池 += 己方point - 夺取（可为负）
+        loser.squad.settle_points_to_pool(loser_char, l_pt - transfer)
 
-        # 立即将胜方 point（含刚夺取的）归入奖励池
-        if w_member and w_member.point > 0:
-            winner_squad.point_pool += w_member.point
-            w_member.point = 0
-
-        bonus_str = f" +首局{first_bonus}币" if first_bonus else ""
+        mult_str = f" ×{multiplier}" if multiplier != 1.0 else ""
         print(f"  第{slot}局: 胜方 {winner.player_name}, "
-              f"point转移{transferred}{bonus_str}")
+              f"min({w_pt},{l_pt}){mult_str}={transfer}, "
+              f"胜方池+{w_pt + transfer}, 败方池+{l_pt - transfer}")
 
         state.match_history.append({
             "winner": winner.player_name,
@@ -423,8 +471,10 @@ def run_match_phase(player_a: Gambler, player_b: Gambler,
             "winner_char_id": winner_char,
             "loser_char_id": loser_char,
             "game_result": game_result,
-            "point_transferred": transferred,
-            "first_match_bonus": first_bonus,
+            "point_transferred": transfer,
+            "multiplier": multiplier,
+            "winner_pool_delta": w_pt + transfer,
+            "loser_pool_delta": l_pt - transfer,
         })
         logger.log_match_result(day, slot, state.match_history[-1])
 
@@ -440,14 +490,16 @@ def _build_match_result_text(player: Gambler, opponent: Gambler) -> str:
     my_char = last.get('winner_char_id', '?') if won else last.get('loser_char_id', '?')
     opp_char = last.get('loser_char_id', '?') if won else last.get('winner_char_id', '?')
     point_moved = last.get("point_transferred", 0)
-    bonus = last.get("first_match_bonus", 0)
+    mult = last.get("multiplier", 1.0)
+    pool_delta = last.get("winner_pool_delta", 0) if won else last.get("loser_pool_delta", 0)
 
+    mult_str = f" ×{mult}" if mult != 1.0 else ""
     return (
         f"【上一局比赛数据】\n"
         f"结果: {'你赢了' if won else '你输了'}（对手: {opponent.player_name}）\n"
         f"你出战: {my_char} | 对手出战: {opp_char}\n"
-        f"point{'夺取' if won else '被夺'}: {point_moved}\n"
-        f"首局奖励: {'+' + str(bonus) if bonus else '无'} 游戏币\n"
+        f"point 夺取量: {point_moved}{mult_str}\n"
+        f"奖励池变动: {'+' + str(pool_delta) if pool_delta >= 0 else str(pool_delta)}\n"
         f"当前游戏币: {player.chips}\n"
         f"奖励池 point: {player.squad.point_pool if player.squad else 0}\n"
         f"阵容: {player.squad.summary() if player.squad else '无'}"
@@ -478,7 +530,7 @@ PROMPT_MATCH1 = """第{day}天的第1局比赛已结束。
 请分析：
 1. 对手第1局为什么选择这个角斗士？
 2. 根据第1局的结果，对手在第2、3局可能会如何调整？
-3. 你第2、3局应该如何部署？想好你的部署策略。
+3. 考虑到第2局夺取量×1.5，你第2、3局应该如何部署？想好你的部署策略。
 
 【注意】这是你私下的自我反思，直接输出分析文字。本环节没有工具可用，不要尝试调用工具或写 function call。"""
 
@@ -488,7 +540,7 @@ PROMPT_DAY_SUMMARY = """第{day}天比赛全部结束，以下是今日复盘。
 
 请总结：
 1. 通过今天三局的整体表现，分析你未知胜率的角斗士们的实力。
-2. 当前角斗士疲劳状态和 point 分布如何影响明天的拍卖和部署？
+2. 当前角斗士疲劳状态和奖励池 point 如何影响明天的拍卖和部署？
 3. 明天的总体策略规划。
 
 【注意】这是你私下的自我反思，直接输出分析文字。本环节没有工具可用，不要尝试调用工具或写 function call。"""
@@ -500,7 +552,8 @@ def _build_day_summary_text(player: Gambler) -> str:
     # 汇总当天的比赛结果
     today_matches = state.match_history[-3:]  # 最近 3 场
     lines = [f"当前游戏币: {player.chips}",
-             f"奖励池 point: {player.squad.point_pool if player.squad else 0}"]
+             f"奖励池 point: {player.squad.point_pool if player.squad else 0}",
+             f"今日胜场: {sum(1 for m in today_matches if m.get('winner') == player.player_name)}"]
     if player.squad:
         lines.append(f"阵容疲劳状态:\n{player.squad.summary()}")
     lines.append(f"\n今日比赛记录:")
@@ -534,17 +587,58 @@ def run_experiment():
     print("=" * 60)
     print()
 
-    # 筹码兑换
-    print("── 筹码兑换 ──")
-    chips_a = player_a.exchange_cash_to_chips(10)  # 10万 → 1000 游戏币
-    chips_b = player_b.exchange_cash_to_chips(10)
-    print(f"  {player_a.player_name}: 兑换 {chips_a} 游戏币 (剩余现金 {player_a.assets:.0f}万)")
-    print(f"  {player_b.player_name}: 兑换 {chips_b} 游戏币 (剩余现金 {player_b.assets:.0f}万)")
+    # 初始游戏币
+    print("── 初始游戏币 ──")
+    player_a.chips = 800
+    player_b.chips = 800
+    print(f"  {player_a.player_name}: {player_a.chips} 游戏币")
+    print(f"  {player_b.player_name}: {player_b.chips} 游戏币")
 
     print()
     print("── 初始状态 ──")
     print(player_a.summary())
     print(player_b.summary())
+
+    # 开局前：展示全部 20 名角斗士名单（随机顺序）+ 匿名胜率排名
+    print(f"\n{'='*60}")
+    print(f"  开局前 — 角斗士名单与匿名胜率排名")
+    print(f"{'='*60}")
+    print()
+    pre_game_info = _show_pre_game_info()
+    print(pre_game_info)
+    player_a_agent.invoke(pre_game_info + "\n\n以上是开局前展示的全部 20 名角斗士名单（随机顺序）和匿名胜率排名（高到低）。注意：胜率百分比与名单顺序无关，无法对应。请回复确认收到。", allow_tools=False)
+    player_b_agent.invoke(pre_game_info + "\n\n以上是开局前展示的全部 20 名角斗士名单（随机顺序）和匿名胜率排名（高到低）。注意：胜率百分比与名单顺序无关，无法对应。请回复确认收到。", allow_tools=False)
+
+    # 开局前规则解读（双线程并行）
+    print(f"\n{'='*60}")
+    print(f"  开局前 — 规则解读")
+    print(f"{'='*60}")
+    print()
+    rules_interpretation_prompt = """现在是开局前的规则解读环节。请结合你已知的所有信息，对游戏规则进行全面分析：
+
+1. 【游戏机制理解】用自己的话总结：游戏币、奖励池、拍卖、比赛、point 结算、疲劳机制的关系和运作方式。
+2. 【关键策略点】哪些规则对你的胜率影响最大？如何利用这些规则？
+
+请直接输出你的分析，本环节不需要使用工具。"""
+
+    def _interpret_a():
+        return player_a_agent.invoke(rules_interpretation_prompt, allow_tools=False)
+
+    def _interpret_b():
+        return player_b_agent.invoke(rules_interpretation_prompt, allow_tools=False)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_a = executor.submit(_interpret_a)
+        future_b = executor.submit(_interpret_b)
+        interpretation_a = future_a.result()
+        interpretation_b = future_b.result()
+
+    print(f"\n── {player_a.player_name} 的规则解读 ──")
+    print(interpretation_a)
+    print(f"\n── {player_b.player_name} 的规则解读 ──")
+    print(interpretation_b)
+    logger.log_agent_message(player_a.player_name, "rules_interpretation", interpretation_a)
+    logger.log_agent_message(player_b.player_name, "rules_interpretation", interpretation_b)
 
     # 追踪每个玩家已展示过的角斗士（跨天不重复）
     shown_a: set[str] = set()
@@ -560,14 +654,15 @@ def run_experiment():
         print(f"  第 {day} 天")
         print(f"{'='*60}")
 
-        # Phase 0: 赛前角斗士胜率预览（每玩家每天随机 5 名，跨天不重复）
+        # Phase 0: 赛前角斗士胜率预览（每天数量不同，跨天不重复）
         logger.log_phase("preview", "start", day)
-        print(f"\n── 赛前信息预览 ──")
+        preview_count = PREVIEW_COUNTS[day]
+        print(f"\n── 赛前信息预览（第{day}天，{preview_count}名）──")
         for p_agent, p, shown, history in [
             (player_a_agent, player_a, shown_a, preview_history_a),
             (player_b_agent, player_b, shown_b, preview_history_b),
         ]:
-            today_preview, _ = _random_gladiator_preview(shown)
+            today_preview, _ = _random_gladiator_preview(shown, preview_count)
             history.append(today_preview)
             full = "\n\n".join(history)
             print(f"  {p.player_name} 今日新增预览:")
@@ -586,36 +681,38 @@ def run_experiment():
         strategy_msg_a = (
             f"拍卖即将开始。在进入拍卖前，请做以下三件事：\n\n"
             f"当前游戏币: {player_a.chips}\n\n"
-            f"1. 【信息总结】总结你目前收到的角斗士胜率预览信息"
-            f"（共 {len(preview_history_a)*PREVIEW_COUNT} 名）\n\n"
-            f"2. 【拍卖规则回顾】回顾拍卖规则：暗标出价，双方同时出价，高者得。\n"
-            f"  弃权输入 0，出价从你的游戏币余额扣除。\n"
-            f"  出价相同时重拍（最多3次），仍相同则跳过该角斗士。\n"
-            f"  你需要获得 3 个角斗士，起拍价 25 游戏币。\n\n"
-            f"  每天从 20 名角斗士中随机抽 9 名进入拍卖池，双方各需 3 名（共 6 名）。\n"
-            f"  今天是全新的一天，昨天的阵容已清空，你将重新竞拍 3 个角斗士。\n"
-            f"  不要一直弃权——弃权太多可能抢不够 3 个。\n"
-            f"  若有一方先选到三个角斗士，系统会自动给剩下的一方随机分配角斗士（point=75）。\n\n"
+            f"1. 【信息总结】总结你目前收到的角斗士胜率预览信息\n\n"
+            f"2. 【拍卖规则回顾】一次性暗标：你只知道自己出的数，看不到对方出价，系统直接比大小。\n"
+            f"  不存在抬价或试探——双方各出一个数，系统直接比。\n"
+            f"  起拍价{STARTING_PRICE}，一口价{MAX_BID_CAP}。弃权填 0。\n"
+            f"  **双方都扣出价**：无论谁赢，双方均扣自己的出价金额。\n"
+            f"  **输方出价→输方自己的奖励池**：A 出 50、B 出 60 → A 扣 50 并转为 A 自己的奖励池（安慰金），B 正常消耗 60。\n"
+            f"  平局不扣币，重拍最多{MAX_BID_RETRIES}次，仍相同则跳过。\n"
+            f"  每天从 20 名中随机抽 9 名，双方各需 3 名（共 6 名）。\n"
+            f"  今天是全新的一天，昨天阵容已清空，重新竞拍。\n"
+            f"  一方先满 3 人 → 另一方系统补齐（{AUTO_FILL_PRICE}币/人）。\n"
+            f"  低币<50 强制弃权。不要一直弃权——弃权太多可能抢不够 3 个。\n\n"
             f"  注意：没有属性相克——判断强弱只看胜率，不要根据名字脑补克制。\n\n"
-            f"3. 【策略规划】你打算在该局中如何分配游戏币？\n"
-            f"  如果遇到胜率不明确的角斗士，你打算如何应对？\n\n"
+            f"3. 【策略规划】你打算如何分配游戏币？\n"
+            f"  输方出价会变成自己的奖励池（安慰金），这如何影响你的定价策略？\n\n"
         )
         strategy_msg_b = (
             f"拍卖即将开始。在进入拍卖前，请做以下三件事：\n\n"
             f"当前游戏币: {player_b.chips}\n\n"
-            f"1. 【信息总结】总结你目前收到的角斗士胜率预览信息"
-            f"（共 {len(preview_history_b)*PREVIEW_COUNT} 名）\n\n"
-            f"2. 【拍卖规则回顾】回顾拍卖规则：暗标出价，双方同时出价，高者得。\n"
-            f"  弃权输入 0，出价从你的游戏币余额扣除。\n"
-            f"  出价相同时重拍（最多3次），仍相同则跳过该角斗士。\n"
-            f"  你需要获得 3 个角斗士，起拍价 25 游戏币。\n\n"
-            f"  每天从 20 名角斗士中随机抽 9 名进入拍卖池，双方各需 3 名（共 6 名）。\n"
-            f"  今天是全新的一天，昨天的阵容已清空，你将重新竞拍 3 个角斗士。\n"
-            f"  不要一直弃权——弃权太多可能抢不够 3 个。\n"
-            f"  若有一方先选到三个角斗士，系统会自动给剩下的一方随机分配角斗士（point=75）。\n\n"
+            f"1. 【信息总结】总结你目前收到的角斗士胜率预览信息\n\n"
+            f"2. 【拍卖规则回顾】一次性暗标：你只知道自己出的数，看不到对方出价，系统直接比大小。\n"
+            f"  不存在抬价或试探——双方各出一个数，系统直接比。\n"
+            f"  起拍价{STARTING_PRICE}，一口价{MAX_BID_CAP}。弃权填 0。\n"
+            f"  **双方都扣出价**：无论谁赢，双方均扣自己的出价金额。\n"
+            f"  **输方出价→输方自己的奖励池**：A 出 50、B 出 60 → A 扣 50 并转为 A 自己的奖励池（安慰金），B 正常消耗 60。\n"
+            f"  平局不扣币，重拍最多{MAX_BID_RETRIES}次，仍相同则跳过。\n"
+            f"  每天从 20 名中随机抽 9 名，双方各需 3 名（共 6 名）。\n"
+            f"  今天是全新的一天，昨天阵容已清空，重新竞拍。\n"
+            f"  一方先满 3 人 → 另一方系统补齐（{AUTO_FILL_PRICE}币/人）。\n"
+            f"  低币<50 强制弃权。不要一直弃权——弃权太多可能抢不够 3 个。\n\n"
             f"  注意：没有属性相克——判断强弱只看胜率，不要根据名字脑补克制。\n\n"
-            f"3. 【策略规划】你打算在该局中如何分配游戏币？\n"
-            f"  如果遇到胜率不明确的角斗士，你打算如何应对？\n\n"
+            f"3. 【策略规划】你打算如何分配游戏币？\n"
+            f"  输方出价会变成自己的奖励池（安慰金），这如何影响你的定价策略？\n\n"
         )
 
         def _strategy_a():
@@ -764,6 +861,34 @@ def run_experiment():
         logger.log_agent_message(player_b.player_name, f"reflect_day_summary", summary_b)
         logger.log_phase("day_summary", "end", day)
 
+        # 每日胜者奖励
+        logger.log_phase("daily_winner_reward", "start", day)
+        print(f"\n── 每日胜者奖励 ──")
+        today_matches = state.match_history[-3:]
+        wins_a = sum(1 for m in today_matches if m.get('winner') == player_a.player_name)
+        wins_b = sum(1 for m in today_matches if m.get('winner') == player_b.player_name)
+        print(f"  今日胜场: {player_a.player_name} {wins_a} 胜 | {player_b.player_name} {wins_b} 胜")
+
+        if wins_a != wins_b:
+            daily_winner = player_a if wins_a > wins_b else player_b
+            pool = daily_winner.squad.point_pool
+            if pool <= 0:
+                reward = 0
+            elif pool < 50:
+                reward = pool
+            else:
+                reward = 50
+            if reward > 0:
+                daily_winner.squad.point_pool -= reward
+                daily_winner.earn_chips(reward)
+                print(f"  胜者 {daily_winner.player_name} 奖励池 {pool} → 兑 {reward} 游戏币")
+            else:
+                print(f"  胜者 {daily_winner.player_name} 奖励池 ≤0，无转换")
+        else:
+            print(f"  胜场相同，无胜者奖励")
+
+        logger.log_phase("daily_winner_reward", "end", day)
+
         # 记录每日状态
         for p in [player_a, player_b]:
             fatigue = p.squad.summary() if p.squad else "无阵容"
@@ -812,7 +937,7 @@ def run_experiment():
                  "my_char": m.get('winner_char_id','?') if m['winner'] == p.player_name else m.get('loser_char_id','?'),
                  "opp_char": m.get('loser_char_id','?') if m['winner'] == p.player_name else m.get('winner_char_id','?'),
                  "point_transferred": m.get('point_transferred', 0),
-                 "first_bonus": m.get('first_match_bonus', 0)}
+                 "multiplier": m.get('multiplier', 1.0)}
                 for i, m in enumerate(state.match_history[-3:])
             ]
             opp_deploys = opp.deployments if opp.deployments else {}
@@ -842,24 +967,21 @@ def run_experiment():
             day, player_a.summary(), player_b.summary(),
         )
 
-    # 最终结算
+    # 最终结算：奖励池 1:1 兑换为游戏币，比较总额
     print()
     print("=" * 60)
     print("  最终结算")
     print("=" * 60)
 
     for player in [player_a, player_b]:
-        remaining_chips = player.chips
-        points = player.squad.get_total_points() if player.squad else 0
-        total_coins = remaining_chips + points
-        cash_back = total_coins / 100.0
-        player.assets += cash_back
-        player.chips = 0
-        print(f"  {player.player_name}: 游戏币 {remaining_chips} + point {points} "
-              f"= {total_coins} 币 → 兑回 {cash_back:.1f} 万现金")
+        pool = player.squad.point_pool if player.squad else 0
+        player.chips += pool
+        player.squad.point_pool = 0
+        print(f"  {player.player_name}: 游戏币 {player.chips - pool} + 奖励池 {pool} "
+              f"= 总计 {player.chips} 游戏币")
         logger.log_final_settlement(
-            player.player_name, remaining_chips, points,
-            total_coins, cash_back, player.assets,
+            player.player_name, player.chips - pool, pool,
+            player.chips, 0, player.assets,
         )
 
     print()
@@ -867,14 +989,14 @@ def run_experiment():
     print(player_a.summary())
     print(player_b.summary())
 
-    net_a = player_a.assets
-    net_b = player_b.assets
-    if net_a > net_b:
-        print(f"\n🏆 {player_a.player_name} 最终胜出！资产 {net_a:.0f} 万 vs {net_b:.0f} 万")
-    elif net_b > net_a:
-        print(f"\n🏆 {player_b.player_name} 最终胜出！资产 {net_b:.0f} 万 vs {net_a:.0f} 万")
+    total_a = player_a.chips
+    total_b = player_b.chips
+    if total_a > total_b:
+        print(f"\n{player_a.player_name} 最终胜出！游戏币 {total_a} vs {total_b}")
+    elif total_b > total_a:
+        print(f"\n{player_b.player_name} 最终胜出！游戏币 {total_b} vs {total_a}")
     else:
-        print(f"\n🤝 双方平局！资产 {net_a:.0f} 万")
+        print(f"\n双方平局！游戏币 {total_a}")
 
     logger.log_final_summary(player_a.summary(), player_b.summary())
     logger.close()

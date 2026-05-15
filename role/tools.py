@@ -402,11 +402,13 @@ def view_auction_item() -> str:
 
 @tool
 def auction_bid(amount: int = -1) -> str:
-    """对当前拍卖的角斗士叫价（使用游戏币）。amount=0 表示弃权/跳过。
+    """对当前拍卖的角斗士叫价（使用游戏币）。一次性暗标：你只知道自己出的数，看不到对方出价，系统直接比大小。输方的出价会转入输方自己的奖励池（安慰金）。amount=0 表示弃权/跳过。
 
     Args:
-        amount: 出价金额（游戏币），必须 >= 0。0 = 弃权
+        amount: 出价金额（游戏币），0=弃权，范围 50~150
     """
+    from .auction import MAX_BID_CAP, STARTING_PRICE
+
     if amount < 0:
         return "错误：出价不能为负数（0 表示弃权）。"
 
@@ -423,14 +425,28 @@ def auction_bid(amount: int = -1) -> str:
     except ValueError as e:
         return f"错误：{e}"
 
-    # 用游戏币检查余额
-    if amount > 0 and not player.can_afford_chips(amount):
-        return f"错误：你的游戏币不足。当前游戏币: {player.chips}，出价 {amount} 游戏币。"
-
     # 检查该玩家是否已经拥有 3 个角斗士
     owner_list = state.auction.owner_a if player_name == state.auction.player_a_name else state.auction.owner_b
     if len(owner_list) >= 3:
         return "错误：你已经拥有 3 个角斗士，不能继续竞拍。"
+
+    # 低币强制弃权：游戏币 < 50
+    if player.chips < 50 and amount != 0:
+        player.pending_bid = 0
+        return (f"你的游戏币不足 50（当前 {player.chips}），已强制弃权。"
+                f"\n当前角斗士: {state.auction.current_char['name'] if state.auction.current_char else '?'}"
+                f"\n等待双方出价完成...")
+
+    # 出价验证
+    if amount > MAX_BID_CAP:
+        return f"错误：出价 {amount} 超过一口价上限 {MAX_BID_CAP}。请出价 0（弃权）或 {STARTING_PRICE}~{MAX_BID_CAP}。"
+
+    if amount != 0 and amount < STARTING_PRICE:
+        return f"错误：出价 {amount} 低于起拍价 {STARTING_PRICE}。出价必须为 0（弃权）或 ≥{STARTING_PRICE}。"
+
+    # 用游戏币检查余额
+    if amount > 0 and not player.can_afford_chips(amount):
+        return f"错误：你的游戏币不足。当前游戏币: {player.chips}，出价 {amount} 游戏币。"
 
     # 暗标模式：只记录 pending_bid，不立即扣钱。外部比较后统一处理。
     player.pending_bid = amount
@@ -453,11 +469,22 @@ def _finalize_auction(state: GameState):
 
 
 def _charge_auto_assign(player, owner_list: list[dict], bob):
-    """对自动分配的角斗士（auto_filled 标记）按 point 扣游戏币。"""
+    """对自动分配的角斗士（auto_filled 标记）按 point 扣游戏币。
+    优先扣 chips，不够从 reward_pool 补扣。"""
     for entry in owner_list:
         if entry.get("auto_filled"):
             amount = entry.get("point", 0)
-            if amount > 0 and player.spend_chips(amount):
+            if amount <= 0:
+                continue
+            if player.spend_chips(amount):
+                if bob is not None:
+                    bob.arena_chips += amount
+            else:
+                # chips 不够，先用尽 chips，再从 reward_pool 补扣
+                remaining_chips = player.chips
+                player.chips = 0
+                shortfall = amount - remaining_chips
+                player.reward_pool -= shortfall
                 if bob is not None:
                     bob.arena_chips += amount
 
@@ -496,7 +523,7 @@ def view_my_squad(player_name: str = "") -> str:
 
 @tool
 def deploy_first_match(player_name: str = "", char_id: str = "") -> str:
-    """选择第1局出战的角斗士。每天首局胜方可获对方point×50%的游戏币奖励。
+    """选择第1局出战的角斗士。每天第2局夺取量×1.5。
 
     Args:
         player_name: 你的名字
@@ -569,13 +596,13 @@ def _do_deploy(player_name: str, char_id: str, match_slot: int) -> str:
     hp_mult = player.squad.get_hp_multiplier(char_id)
     point = member.point if member else 0
 
-    first_bonus_hint = ""
-    if match_slot == 1:
-        first_bonus_hint = " | 首局胜方可获对方point×50%游戏币"
+    bonus_hint = ""
+    if match_slot == 2:
+        bonus_hint = " | 第2局夺取量×1.5"
 
     return (
         f"已部署 {member.name} ({char_id}) 到第 {match_slot} 局。\n"
-        f"角斗士 HP: {hp_mult*100:.0f}% | point: {point}{first_bonus_hint}"
+        f"角斗士 HP: {hp_mult*100:.0f}% | point: {point}{bonus_hint}"
     )
 
 

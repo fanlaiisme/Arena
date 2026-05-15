@@ -3,8 +3,9 @@
 import random
 from dataclasses import dataclass, field
 
-STARTING_PRICE = 25   # 起拍价（游戏币）
-AUTO_FILL_PRICE = 75  # 系统补填价（一方满后，随机补角斗士给另一方）
+STARTING_PRICE = 50    # 起拍价（游戏币）
+AUTO_FILL_PRICE = 85   # 系统补填价（一方满后，随机补角斗士给另一方）
+MAX_BID_CAP = 150       # 一口价上限
 
 
 @dataclass
@@ -100,18 +101,12 @@ class AuctionSession:
             self.owner_b.append(entry)
 
     def _fill_to_three(self, target: list[dict], filled: list[dict]):
-        """将 target 补到 3 个角斗士。优先用未展示的，不够从已展示未认领中补。"""
+        """将 target 补到 3 个角斗士。仅从拍卖池 9 人中随机选未认领的。"""
         needed = 3 - len(target)
         if needed <= 0:
             return
         owned_ids = {c['char_id'] for c in target + filled}
-        # 先拿未展示的
-        candidates = [c for c in self.pool[self.shown_index:] if c['char_id'] not in owned_ids]
-        # 不够时从已展示未认领中补
-        if len(candidates) < needed:
-            extras = [c for c in self.pool[:self.shown_index] if c['char_id'] not in owned_ids]
-            random.shuffle(extras)
-            candidates += extras[:needed - len(candidates)]
+        candidates = [c for c in self.pool if c['char_id'] not in owned_ids]
         random.shuffle(candidates)
         for c in candidates[:needed]:
             c["point"] = AUTO_FILL_PRICE
@@ -141,6 +136,8 @@ class AuctionSession:
                           player_a_name: str, player_b_name: str) -> dict:
         """暗标一轮：接收两个玩家的出价，比较并判定归属。
 
+        出价验证：>150 拒绝，非零且<50 拒绝。
+
         Returns:
             {"result": "win"|"tie"|"skip", "winner": ..., "amount": ..., "msg": ...}
         """
@@ -149,6 +146,15 @@ class AuctionSession:
                     "msg": "（当前没有正在拍卖的角斗士）"}
 
         char_name = self.current_char["name"]
+
+        # 出价验证
+        for bid, name in [(bid_a, player_a_name), (bid_b, player_b_name)]:
+            if bid > MAX_BID_CAP:
+                return {"result": "skip", "winner": None, "amount": 0,
+                        "msg": f"错误：{name} 出价 {bid} 超过一口价上限 {MAX_BID_CAP}。"}
+            if bid != 0 and bid < STARTING_PRICE:
+                return {"result": "skip", "winner": None, "amount": 0,
+                        "msg": f"错误：{name} 出价 {bid} 低于起拍价 {STARTING_PRICE}。出价必须为 0（弃权）或 ≥{STARTING_PRICE}。"}
 
         # 双方都弃权 → 跳过该角斗士
         if bid_a == 0 and bid_b == 0:

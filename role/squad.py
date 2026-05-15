@@ -93,13 +93,12 @@ class Squad:
         if member:
             member.point = point
 
-    def transfer_point(self, from_char_id: str, to_char_id: str):
-        """负方角斗士的 point 转移给胜方角斗士。"""
-        loser = self._find(from_char_id)
-        winner = self._find(to_char_id)
-        if loser and winner:
-            winner.point += loser.point
-            loser.point = 0
+    def settle_points_to_pool(self, char_id: str, amount: int):
+        """比赛后结算：清零角斗士 point，amount 归入 point_pool（可为负）。"""
+        member = self._find(char_id)
+        if member:
+            self.point_pool += amount
+            member.point = 0
 
     def get_total_points(self) -> int:
         """奖励池 + 成员 point 总和。"""
@@ -131,8 +130,5 @@ class Squad:
             lines.append(
                 f"  {i+1}. {m.name} (char_id: {m.char_id}){used_mark}{fatigue_info}{point_info}"
             )
-        if self.point_pool > 0:
-            lines.append(f"\n  【奖励池】: {self.point_pool} point（已归池，与角斗士无关）")
-        else:
-            lines.append(f"\n  【奖励池】: 0 point")
+        lines.append(f"\n  【奖励池】: {self.point_pool} point（已归池，与角斗士无关）")
         return "\n".join(lines)
