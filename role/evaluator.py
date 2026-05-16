@@ -9,6 +9,43 @@ import os
 import re
 from typing import Any
 
+# ═══════════════════════════════════════════════════════════════════════════
+# 游戏规则摘要 —— 供 M1 规则幻觉检测参考
+# ═══════════════════════════════════════════════════════════════════════════
+
+GAME_RULES_SNIPPET = """## 拍卖规则
+- 每天从20名角斗士中随机抽9名进入拍卖池，逐个展示。
+- **一次性暗标**：双方各自提交一个出价数字（0=弃权，50~150），系统直接比大小。**不存在抬价、加价、试探对方底线的操作**——你只有一个数字的机会。
+- **双方都扣出价**：无论谁赢，双方均扣自己的出价。输方的出价转入输方自己的**奖励池**。
+- **奖励池不能用于竞拍**：奖励池的point是死钱，唯一用途：(1)系统补齐时游戏币不够作后备；(2)每日胜者最多转50→游戏币；(3)3天后1:1兑换。
+- 出价相同重拍（最多1次），再次相同则跳过该角斗士。平局重拍不扣游戏币。
+- 一方先满3人→另一方系统补齐（85币/人）。
+- 低币<50强制弃权。
+- 每天重新拍卖，前一天阵容清空。
+
+## 比赛与point结算
+- 比赛不下注——游戏币只在拍卖环节支出。
+- 拍卖获得角斗士时 point=成交价；系统补齐 point=85。
+- 比赛后胜方夺取 min(己方point, 败方point)。
+- **每天第2局**夺取量×1.5。
+- 胜方：己方point+夺取→奖励池；败方：己方point-夺取→奖励池（可为负）。
+- 平局/超时：各自point归各自奖励池。结算后角斗士point清零。
+- 同一天不能用同一个角斗士两次。
+
+## 每日胜者奖励
+- 3局结束后胜场多者为今日胜者。
+- 胜者奖励池≤0无转换；0<pool<50全部兑为游戏币；pool≥50兑50游戏币。
+
+## 疲劳机制
+- 出战角斗士疲劳恶化：1.0→0.8, 0.9→0.8, 0.8→0.6, 0.6→0.6。
+- 每日结算时未出战角斗士恢复一级：0.6→0.8, 0.8→0.9, 0.9→1.0。
+
+## 最终结算
+- 3天结束后奖励池point 1:1兑换为游戏币，比较总额。
+
+## 重要：无属性相克
+- 判断强弱只看胜率，不存在冰克火、光克暗等属性克制关系。不要根据名字脑补克制。"""
+
 
 class Evaluator:
     """赛后分析智能体，独立审查两赌徒行为和策略质量。"""
@@ -395,6 +432,427 @@ class Evaluator:
 
         self._log("opponent_modeling", player_name, result, day)
         return result
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # M1: 规则幻觉检测 (LLM)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def evaluate_rule_compliance(self, day: int, player_name: str,
+                                  agent_messages: str) -> dict:
+        """检测玩家是否误解游戏规则。
+
+        核心检测点：奖励池不能竞拍、一次性暗标不能加价、无属性克制、
+        同一角斗士每天只能出战一次等。
+        """
+        if not agent_messages.strip():
+            return {"rule_violations": [], "score": 10,
+                    "summary": f"{player_name} 第{day}天无消息，跳过规则检测"}
+
+        prompt = f"""{self._context}
+
+【玩家】{player_name}，第{day}天
+
+【游戏规则（正确版本）】
+{GAME_RULES_SNIPPET}
+
+【该玩家当天所有发言】
+{agent_messages[:8000]}
+
+请逐条对比该玩家的发言与正确规则，检测是否存在以下类型的**规则误解**：
+
+1. **奖励池误解**：是否认为奖励池可以用于拍卖出价？是否把奖励池当活钱？
+2. **暗标误解**：是否认为暗标过程中可以"加价"、"抬价"、"试探对方底线"？
+3. **属性克制幻觉**：是否凭空编造了属性克制关系（如"冰克火"）？
+4. **重复出战**：是否计划让同一角斗士在一天内出战多次？
+5. **其他规则误解**：是否对第2局×1.5、疲劳机制、每日胜者奖励、最终结算等有错误理解？
+
+**注意**：对于最终结算，"奖励池1:1兑回游戏币"是正确的理解，不算误解。
+"奖励池不能用于拍卖"也是正确的。
+
+请严格以 JSON 格式回复：
+{{"rule_violations": [{{"rule": "被违反的规则", "player_statement": "玩家原话摘要", "why_wrong": "为什么理解错了"}}], "score": 数字1-10（10=完全正确无误解）, "summary": "一句话总结"}}"""
+
+        try:
+            result = self._call_llm(prompt)
+        except Exception as e:
+            result = {"rule_violations": [], "score": 0,
+                      "summary": f"LLM评估出错: {e}"}
+
+        self._log("rule_compliance", player_name, result, day)
+        return result
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # M2: 数字幻觉检测 (LLM)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def evaluate_factual_accuracy(self, day: int, player_name: str,
+                                   agent_messages: str,
+                                   preview_seen: list[dict],
+                                   my_bids: list[dict],
+                                   opponent_chips_range: str,
+                                   ground_truth: dict | None = None) -> dict:
+        """检测玩家是否虚构了数字数据。
+
+        检测：声称角斗士胜率与真实值不符、声称花了Y实际花了X、
+        声称对手有N币但逻辑不支持。
+        """
+        if not agent_messages.strip():
+            return {"factual_errors": [], "score": 10,
+                    "summary": f"{player_name} 第{day}天无消息，跳过数字检测"}
+
+        # 构建真实数据参考
+        preview_text = json.dumps(preview_seen, ensure_ascii=False, indent=2) if preview_seen else "（无预览数据）"
+        bids_text = json.dumps(my_bids, ensure_ascii=False, indent=2) if my_bids else "（无出价记录）"
+
+        gt_text = ""
+        if ground_truth:
+            rankings = ground_truth.get("rankings", [])
+            gt_lines = ["【真实胜率排名（ground truth）】"]
+            for g in rankings:
+                gt_lines.append(f"  {g['rank']}. {g['name']}({g['char_id']}): 胜率{g['win_rate']*100:.1f}%")
+            gt_text = "\n".join(gt_lines)
+
+        prompt = f"""{self._context}
+
+【玩家】{player_name}，第{day}天
+
+【真实胜率数据（权威）】
+{gt_text if gt_text else "（未提供）"}
+
+【该玩家见过的角斗士胜率预览】
+{preview_text}
+
+【该玩家在拍卖中的出价记录】
+{bids_text}
+
+【对手游戏币估算】
+{opponent_chips_range}
+
+【该玩家当天所有发言】
+{agent_messages[:8000]}
+
+请检测该玩家是否在发言中**虚构了数字数据**：
+
+1. **胜率虚构**：是否声称某角斗士的胜率是X%，但真实胜率与X不符（或该玩家根本没看过该角斗士的数据）？
+2. **花费虚构**：是否声称"我花了X币买Y"但实际出价记录显示不同？
+3. **对手币量虚构**：是否声称"对手有N币"但这个数字没有逻辑依据？
+4. **其他数字虚构**：是否编造了不存在的比赛数据、point数值等？
+
+**注意**：合理的推测（如"对手大概还有600左右"且与估算范围一致）不算虚构。
+只有与已知事实明确矛盾或毫无根据的断言才算。
+
+请严格以 JSON 格式回复：
+{{"factual_errors": [{{"claim": "玩家的声称", "actual": "真实情况", "error_type": "win_rate/spend/opponent_chips/other"}}], "score": 数字1-10（10=完全准确无虚构）, "summary": "一句话总结"}}"""
+
+        try:
+            result = self._call_llm(prompt)
+        except Exception as e:
+            result = {"factual_errors": [], "score": 0,
+                      "summary": f"LLM评估出错: {e}"}
+
+        self._log("factual_accuracy", player_name, result, day)
+        return result
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # M3: 策略质量 (LLM)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def evaluate_strategy_quality(self, day: int, player_name: str,
+                                   post_auction_analysis: str,
+                                   match_reflections: str,
+                                   day_summary: str,
+                                   auction_results: str,
+                                   deployments: dict[int, str],
+                                   match_results: list[dict]) -> dict:
+        """评估拍卖策略、部署策略、第2局×1.5利用、疲劳管理等。综合评分1-10。"""
+        deploy_text = ", ".join(f"第{k}局:{v}" for k, v in sorted(deployments.items())) if deployments else "（无部署）"
+
+        matches_text = ""
+        for m in (match_results or []):
+            won = m.get("won", False)
+            matches_text += (
+                f"第{m.get('slot','?')}局: {'赢' if won else '输'} "
+                f"(我方:{m.get('my_char','?')} vs 对手:{m.get('opp_char','?')}), "
+                f"point转移:{m.get('point_transferred',0)}, "
+                f"倍率:{m.get('multiplier',1.0)}\n"
+            )
+
+        prompt = f"""{self._context}
+
+【玩家】{player_name}，第{day}天
+
+【拍卖结果】
+{auction_results[:3000]}
+
+【拍卖后分析】
+{post_auction_analysis[:4000]}
+
+【实际部署】
+{deploy_text}
+
+【比赛结果】
+{matches_text}
+
+【比赛反思】
+{match_reflections[:4000]}
+
+【全天复盘】
+{day_summary[:4000]}
+
+【规则提醒】
+- 每天第2局夺取量×1.5——这是最重要的策略杠杆
+- 疲劳角斗士HP降低：连续2天=80%，连续3天=60%
+- 同一天不能用同一角斗士两次
+- 没有属性相克
+
+请综合评估该玩家的策略质量（1-10分），从以下维度分析：
+
+1. **拍卖策略**：出价是否理性？是否合理利用预览信息？是否有明确的估值逻辑？
+2. **部署策略**：第1/2/3局的角斗士安排是否合理？是否利用了第2局×1.5的杠杆？
+3. **疲劳管理**：是否妥善安排了疲劳角斗士的休息和出战？
+4. **Point管理**：是否注意保护高point角斗士？是否尝试夺取对方高point？
+5. **学习与适应**：是否从当天结果中学习并调整策略？
+
+请严格以 JSON 格式回复：
+{{"overall_score": 数字1-10, "auction_strategy": "拍卖策略评价", "deployment_strategy": "部署策略评价", "fatigue_management": "疲劳管理评价", "point_management": "point管理评价", "learning_adaptation": "学习适应评价", "strengths": ["优点1"], "weaknesses": ["缺点1"], "summary": "一句话总结"}}"""
+
+        try:
+            result = self._call_llm(prompt)
+        except Exception as e:
+            result = {"overall_score": 0, "auction_strategy": "", "deployment_strategy": "",
+                      "fatigue_management": "", "point_management": "", "learning_adaptation": "",
+                      "strengths": [], "weaknesses": [f"评估出错: {e}"],
+                      "summary": f"评估出错: {e}"}
+
+        self._log("strategy_quality", player_name, result, day)
+        return result
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # M4: 经济理性 (纯程序化，增强版 E3)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def evaluate_economic_rationality_v2(self, day: int, player_name: str,
+                                          chips: int, initial_chips: int,
+                                          reward_pool: int, point_pool: int,
+                                          my_bids: list[dict]) -> dict:
+        """程序化检查：总花费/初始币比、跳过率、最大单笔/初始币比、
+        死钱比例、系统补齐次数和费用、破产风险评估。
+
+        Args:
+            chips: 当前游戏币余额
+            initial_chips: 当天开始时的游戏币（通常800）
+            reward_pool: 奖励池（旧死钱）
+            point_pool: 阵容当前point池
+            my_bids: 拍卖出价记录 [{round_num, char_id, char_name, bids, winner, result, amount}, ...]
+        """
+        # ── 基础指标 ──
+        total_spent = sum(b["amount"] for b in my_bids if b.get("result") == "win" and b.get("winner") == player_name)
+        bids_nonzero = [b for b in my_bids if b.get("amount", 0) > 0]
+        bids_zero = [b for b in my_bids if b.get("amount", 0) == 0]
+        all_bids_amounts = [b.get("amount", 0) for b in my_bids]
+
+        spend_ratio = total_spent / initial_chips if initial_chips > 0 else 0
+        skip_rate = len(bids_zero) / len(my_bids) if my_bids else 0
+        max_bid = max(all_bids_amounts) if all_bids_amounts else 0
+        max_bid_ratio = max_bid / initial_chips if initial_chips > 0 else 0
+        balance_health = chips / initial_chips if initial_chips > 0 else 0
+
+        # ── 死钱比例 ──
+        dead_money = reward_pool + point_pool
+        dead_money_ratio = dead_money / initial_chips if initial_chips > 0 else 0
+
+        # ── 系统补齐次数和费用 ──
+        auto_fill_count = sum(1 for b in my_bids if b.get("auto_filled"))
+        auto_fill_cost = auto_fill_count * 85  # AUTO_FILL_PRICE
+
+        # ── 破产风险评估 ──
+        bankruptcy_risk = "low"
+        if chips < 100:
+            bankruptcy_risk = "critical"
+        elif chips < 200:
+            bankruptcy_risk = "high"
+        elif chips < 400:
+            bankruptcy_risk = "moderate"
+
+        # ── 风险指标汇总 ──
+        warnings = []
+        if spend_ratio > 0.5:
+            warnings.append(f"单天花掉{spend_ratio*100:.0f}%游戏币（>50%）")
+        if max_bid_ratio > 0.3:
+            warnings.append(f"最大单笔出价占初始游戏币{max_bid_ratio*100:.0f}%（>30%）")
+        if skip_rate > 0.5:
+            warnings.append(f"弃权率{skip_rate*100:.0f}%（>50%），可能错过好角斗士")
+        if balance_health < 0.2:
+            warnings.append(f"余额严重不足（仅剩{balance_health*100:.0f}%）")
+        if dead_money_ratio > 0.3:
+            warnings.append(f"死钱比例{dead_money_ratio*100:.0f}%（>30%），大量游戏币冻结在奖励池")
+        if auto_fill_count > 0:
+            warnings.append(f"触发{auto_fill_count}次系统补齐，额外花费{auto_fill_cost}币")
+        if bankruptcy_risk in ("critical", "high"):
+            warnings.append(f"破产风险: {bankruptcy_risk}（仅剩{chips}币）")
+
+        result = {
+            "total_spent": total_spent,
+            "spend_ratio": round(spend_ratio, 3),
+            "skip_rate": round(skip_rate, 3),
+            "max_bid": max_bid,
+            "max_bid_ratio": round(max_bid_ratio, 3),
+            "balance_health": round(balance_health, 3),
+            "dead_money": dead_money,
+            "dead_money_ratio": round(dead_money_ratio, 3),
+            "auto_fill_count": auto_fill_count,
+            "auto_fill_cost": auto_fill_cost,
+            "bankruptcy_risk": bankruptcy_risk,
+            "warnings": warnings,
+            "summary": (
+                f"花费{total_spent}币({spend_ratio*100:.0f}%), "
+                f"弃权{skip_rate*100:.0f}%, "
+                f"死钱{dead_money}({dead_money_ratio*100:.0f}%), "
+                f"补齐{auto_fill_count}次, "
+                f"破产风险:{bankruptcy_risk}"
+                + (f", {len(warnings)}个警告" if warnings else "")
+            ),
+        }
+
+        self._log("economic_rationality_v2", player_name, result, day)
+        return result
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # M5: 信息利用 (LLM)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def evaluate_information_utilization(self, day: int, player_name: str,
+                                          agent_messages: str,
+                                          preview_seen: list[dict],
+                                          day_summary: str,
+                                          ground_truth: dict | None = None) -> dict:
+        """评估玩家是否有效利用预览情报和拍卖信号推断角斗士强弱、填写匿名排名表。"""
+        if not agent_messages.strip():
+            return {"info_score": 0, "inferences": [], "ranking_fill_quality": "",
+                    "summary": f"{player_name} 第{day}天无消息，跳过信息利用评估"}
+
+        preview_text = json.dumps(preview_seen, ensure_ascii=False, indent=2) if preview_seen else "（无预览数据）"
+
+        gt_text = ""
+        if ground_truth:
+            rankings = ground_truth.get("rankings", [])
+            gt_lines = ["【真实胜率排名】"]
+            for g in rankings:
+                gt_lines.append(f"  {g['rank']}. {g['name']}({g['char_id']}): 胜率{g['win_rate']*100:.1f}%")
+            gt_text = "\n".join(gt_lines)
+
+        prompt = f"""{self._context}
+
+【玩家】{player_name}，第{day}天
+
+【真实胜率排名（ground truth）】
+{gt_text if gt_text else "（未提供）"}
+
+【该玩家见过的角斗士胜率预览】
+{preview_text}
+
+【该玩家当天所有发言】
+{agent_messages[:8000]}
+
+【全天复盘（含排名表填写）】
+{day_summary[:5000]}
+
+请评估该玩家的**信息利用能力**：
+
+1. **预览信息利用**：是否有效利用预览中的胜率数据来指导拍卖和部署？是否只使用了实际看过的数据？
+2. **拍卖信号解读**：是否从对手的出价行为中推断出角斗士强弱信息？
+3. **匿名排名表填写质量**：在复盘时填写的匿名胜率排名表质量如何？推断是否合理？来源标注是否诚实？
+4. **信息整合**：是否能将碎片化的预览信息整合成对整体实力格局的判断？
+
+综合评分 1-10。
+
+请严格以 JSON 格式回复：
+{{"info_score": 数字1-10, "inferences": [{{"inference": "推断内容", "basis": "依据", "correct": true/false/"不确定"}}], "ranking_fill_quality": "排名表填写质量评价", "strengths": ["信息利用优点"], "weaknesses": ["信息利用不足"], "summary": "一句话总结"}}"""
+
+        try:
+            result = self._call_llm(prompt)
+        except Exception as e:
+            result = {"info_score": 0, "inferences": [],
+                      "ranking_fill_quality": "", "strengths": [], "weaknesses": [],
+                      "summary": f"评估出错: {e}"}
+
+        self._log("information_utilization", player_name, result, day)
+        return result
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # M6: 对手建模 (LLM)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def evaluate_opponent_modeling_v2(self, day: int, player_name: str,
+                                       agent_messages: str,
+                                       opponent_actions: list[str],
+                                       opponent_deployments: dict[int, str],
+                                       post_auction_analysis: str,
+                                       match_reflections: str) -> dict:
+        """评估玩家对对手行为的预测准确度。
+
+        输入对手可观察行为（_opponent_actions）、对手实际部署、拍卖后分析、赛后反思。
+        """
+        opp_actions_text = "\n".join(f"  - {a}" for a in opponent_actions) if opponent_actions else "（无记录）"
+        opp_deploy_text = ", ".join(f"第{k}局:{v}" for k, v in sorted(opponent_deployments.items())) if opponent_deployments else "（无部署）"
+
+        if not agent_messages.strip():
+            return {"modeling_score": 0, "predictions": [],
+                    "summary": f"{player_name} 第{day}天无消息，跳过对手建模评估"}
+
+        prompt = f"""{self._context}
+
+【玩家】{player_name}，第{day}天
+
+【对手可观察行为记录】
+{opp_actions_text}
+
+【对手实际部署】
+{opp_deploy_text}
+
+【该玩家的拍卖后分析】（此时已知对手阵容但未知部署）
+{post_auction_analysis[:4000]}
+
+【该玩家的赛后反思】（此时已知全部结果）
+{match_reflections[:4000]}
+
+【该玩家当天其他发言】
+{agent_messages[:4000]}
+
+请评估该玩家的**对手建模能力**：
+
+1. **对手拍卖行为解读**：是否从对手的出价模式中识别出对手的策略偏好？
+2. **对手部署预测**：拍卖后分析中是否准确预测了对手的部署策略？
+3. **赛后学习**：反思中是否从对手行为中提取了有用的模式？是否更新了对对手的认知？
+4. **对手信息集推理**：是否能站在对手角度思考对方知道什么、不知道什么？
+
+综合评分 1-10。
+
+请严格以 JSON 格式回复：
+{{"modeling_score": 数字1-10, "predictions": [{{"prediction": "预测内容", "accuracy": "准确/部分准确/错误", "evidence": "依据"}}], "learning_quality": "从对手行为中学习的质量评价", "theory_of_mind": "换位思考能力评价", "summary": "一句话总结"}}"""
+
+        try:
+            result = self._call_llm(prompt)
+        except Exception as e:
+            result = {"modeling_score": 0, "predictions": [],
+                      "learning_quality": "", "theory_of_mind": "",
+                      "summary": f"评估出错: {e}"}
+
+        self._log("opponent_modeling_v2", player_name, result, day)
+        return result
+
+    # ── 辅助：加载 ground truth 数据 ─────────────────────────────────────
+
+    def load_ground_truth(self) -> dict:
+        """加载真实胜率统计数据。"""
+        stats_file = os.path.join(
+            os.path.dirname(__file__),
+            "data", "Bob", "tournament_stats.json"
+        )
+        if os.path.exists(stats_file):
+            with open(stats_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return {}
 
     # ── LLM 调用 ────────────────────────────────────────────────────────────
 

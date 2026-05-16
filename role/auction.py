@@ -43,6 +43,7 @@ class AuctionSession:
         random.shuffle(available)
         self.pool = available[:9]
         self.shown_index = 0
+        self.bid_history: list[dict] = []  # 每轮暗标结果记录
 
     # ── 拍卖流程 ──────────────────────────────────────────────────────────
 
@@ -133,7 +134,8 @@ class AuctionSession:
     # ── 暗标出价 ──────────────────────────────────────────────────────────
 
     def sealed_bid_round(self, bid_a: int, bid_b: int,
-                          player_a_name: str, player_b_name: str) -> dict:
+                          player_a_name: str, player_b_name: str,
+                          round_num: int = 0) -> dict:
         """暗标一轮：接收两个玩家的出价，比较并判定归属。
 
         出价验证：>150 拒绝，非零且<50 拒绝。
@@ -146,13 +148,18 @@ class AuctionSession:
                     "msg": "（当前没有正在拍卖的角斗士）"}
 
         char_name = self.current_char["name"]
+        char_id = self.current_char["char_id"]
 
         # 出价验证
         for bid, name in [(bid_a, player_a_name), (bid_b, player_b_name)]:
             if bid > MAX_BID_CAP:
+                self._record_bid(round_num, char_id, char_name, bid_a, bid_b,
+                                 player_a_name, player_b_name, "skip", None, 0)
                 return {"result": "skip", "winner": None, "amount": 0,
                         "msg": f"错误：{name} 出价 {bid} 超过一口价上限 {MAX_BID_CAP}。"}
             if bid != 0 and bid < STARTING_PRICE:
+                self._record_bid(round_num, char_id, char_name, bid_a, bid_b,
+                                 player_a_name, player_b_name, "skip", None, 0)
                 return {"result": "skip", "winner": None, "amount": 0,
                         "msg": f"错误：{name} 出价 {bid} 低于起拍价 {STARTING_PRICE}。出价必须为 0（弃权）或 ≥{STARTING_PRICE}。"}
 
@@ -160,18 +167,24 @@ class AuctionSession:
         if bid_a == 0 and bid_b == 0:
             self._advance_to_next()
             msg = f"双方均弃权，{char_name} 回池，跳过。"
+            self._record_bid(round_num, char_id, char_name, bid_a, bid_b,
+                             player_a_name, player_b_name, "skip", None, 0)
             return {"result": "skip", "winner": None, "amount": 0, "msg": msg}
 
         # 一人弃权 → 另一人获得
         if bid_a == 0:
             self._assign_to(player_b_name, point=bid_b)
             self._advance_to_next()
+            self._record_bid(round_num, char_id, char_name, bid_a, bid_b,
+                             player_a_name, player_b_name, "win", player_b_name, bid_b)
             return {"result": "win", "winner": player_b_name, "amount": bid_b,
                     "msg": f"{player_a_name} 弃权，{char_name} 以 {bid_b} 游戏币归 {player_b_name} 所有。"}
 
         if bid_b == 0:
             self._assign_to(player_a_name, point=bid_a)
             self._advance_to_next()
+            self._record_bid(round_num, char_id, char_name, bid_a, bid_b,
+                             player_a_name, player_b_name, "win", player_a_name, bid_a)
             return {"result": "win", "winner": player_a_name, "amount": bid_a,
                     "msg": f"{player_b_name} 弃权，{char_name} 以 {bid_a} 游戏币归 {player_a_name} 所有。"}
 
@@ -179,17 +192,35 @@ class AuctionSession:
         if bid_a > bid_b:
             self._assign_to(player_a_name, point=bid_a)
             self._advance_to_next()
+            self._record_bid(round_num, char_id, char_name, bid_a, bid_b,
+                             player_a_name, player_b_name, "win", player_a_name, bid_a)
             return {"result": "win", "winner": player_a_name, "amount": bid_a,
                     "msg": f"{char_name} 以 {bid_a} 游戏币归 {player_a_name} 所有（{player_b_name} 出价 {bid_b}）。"}
         elif bid_b > bid_a:
             self._assign_to(player_b_name, point=bid_b)
             self._advance_to_next()
+            self._record_bid(round_num, char_id, char_name, bid_a, bid_b,
+                             player_a_name, player_b_name, "win", player_b_name, bid_b)
             return {"result": "win", "winner": player_b_name, "amount": bid_b,
                     "msg": f"{char_name} 以 {bid_b} 游戏币归 {player_b_name} 所有（{player_a_name} 出价 {bid_a}）。"}
 
-        # 出价相同 → 平局，触发重拍
+        # 出价相同 → 平局，触发重拍（不记录，等待最终结果）
         return {"result": "tie", "winner": None, "amount": bid_a,
                 "msg": f"双方出价相同 ({bid_a} 游戏币)，需要重新出价。"}
+
+    def _record_bid(self, round_num: int, char_id: str, char_name: str,
+                    bid_a: int, bid_b: int, player_a_name: str, player_b_name: str,
+                    result: str, winner: str | None, amount: int):
+        """记录一轮暗标结果到 bid_history。"""
+        self.bid_history.append({
+            "round_num": round_num,
+            "char_id": char_id,
+            "char_name": char_name,
+            "bids": {player_a_name: bid_a, player_b_name: bid_b},
+            "winner": winner,
+            "result": result,
+            "amount": amount,
+        })
 
     def _advance_to_next(self):
         """前进到下一个角斗士。"""

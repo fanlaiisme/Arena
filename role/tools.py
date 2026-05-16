@@ -458,14 +458,18 @@ def auction_bid(amount: int = -1) -> str:
     )
 
 
-def _finalize_auction(state: GameState):
+def _finalize_auction(state: GameState, old_pool_a: int = 0, old_pool_b: int = 0):
     """拍卖结束后，为双方构建阵容。对系统补填的角斗士扣游戏币。"""
     if state.player_a and state.auction.owner_a:
         _charge_auto_assign(state.player_a, state.auction.owner_a, state.bob)
         state.player_a.build_squad(state.auction.owner_a)
+        if state.player_a.squad:
+            state.player_a.squad.point_pool += old_pool_a
     if state.player_b and state.auction.owner_b:
         _charge_auto_assign(state.player_b, state.auction.owner_b, state.bob)
         state.player_b.build_squad(state.auction.owner_b)
+        if state.player_b.squad:
+            state.player_b.squad.point_pool += old_pool_b
 
 
 def _charge_auto_assign(player, owner_list: list[dict], bob):

@@ -92,7 +92,7 @@ class Role:
 
     def summary(self) -> str:
         chip_info = f" | 游戏币: {self.chips}" if self.chips else ""
-        pool_info = f" | 奖励池: {self.reward_pool}" if self.reward_pool else ""
+        pool_info = f" | 拍卖死钱: {self.reward_pool}" if self.reward_pool else ""
         return (f"{self.name} | {self.gender} | {self.age}岁 | "
                 f"{self.occupation} | 资产 {self.assets:.0f}万{chip_info}{pool_info}")
 
