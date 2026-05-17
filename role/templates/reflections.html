@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>每日复盘</title>
+<style>
+  :root {
+    --cl-a: #2563eb; --cl-a-bg: #1e293b;
+    --cl-b: #dc2626; --cl-b-bg: #2d1e1e;
+    --bg: #0f172a; --panel: #1e293b; --text: #e2e8f0; --dim: #94a3b8;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    padding: 20px; min-height: 100vh;
+  }
+  h1 { font-size: 22px; margin-bottom: 8px; }
+  .subtitle { color: var(--dim); font-size: 13px; margin-bottom: 20px; }
+  .controls { margin-bottom: 16px; display: flex; gap: 10px; }
+  .btn {
+    background: #334155; color: var(--text); border: 1px solid #475569;
+    padding: 8px 18px; border-radius: 8px; font-size: 13px; cursor: pointer;
+  }
+  .btn:hover { background: #475569; }
+  .btn.active { background: var(--cl-a); border-color: var(--cl-a); }
+
+  .grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .player-col { display: flex; flex-direction: column; gap: 12px; }
+  .player-header {
+    font-size: 16px; font-weight: 700; padding: 8px 14px; border-radius: 8px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .player-header.a { background: var(--cl-a); }
+  .player-header.b { background: var(--cl-b); }
+  .player-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
+
+  .day-card {
+    background: var(--panel); border: 1px solid #334155;
+    border-radius: 10px; padding: 14px;
+  }
+  .day-card h3 {
+    font-size: 14px; color: var(--dim); margin-bottom: 10px;
+    padding-bottom: 6px; border-bottom: 1px solid #334155;
+  }
+  .reflection-text {
+    font-size: 12px; line-height: 1.7; white-space: pre-wrap;
+    max-height: 500px; overflow-y: auto;
+    background: #0f172a; border-radius: 6px; padding: 10px;
+    font-family: 'Courier New', monospace;
+  }
+  .empty { color: var(--dim); font-style: italic; font-size: 12px; padding: 20px 0; text-align: center; }
+  .top-row { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+  .btn-back {
+    background: #334155; color: var(--text); border: 1px solid #475569;
+    padding: 8px 16px; border-radius: 8px; font-size: 13px; cursor: pointer;
+    white-space: nowrap; flex-shrink: 0; margin-top: 2px;
+  }
+  .btn-back:hover { background: #475569; }
+</style>
+</head>
+<body>
+
+<div class="top-row">
+  <button class="btn-back" onclick="window.location='/'">← 返回仪表盘</button>
+  <div>
+    <h1>每日复盘 — 匿名胜率表 & 对手游戏币估算</h1>
+    <p class="subtitle">自动刷新间隔: 3秒 | <span id="last-update">等待数据...</span></p>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="player-col">
+    <div class="player-header a">
+      <img class="player-avatar" src="/players/斑目貘.png" alt="" />
+      <span id="name-a">玩家A</span>
+    </div>
+    <div id="col-a"></div>
+  </div>
+  <div class="player-col">
+    <div class="player-header b">
+      <img class="player-avatar" src="/players/夜神月.png" alt="" />
+      <span id="name-b">玩家B</span>
+    </div>
+    <div id="col-b"></div>
+  </div>
+</div>
+
+<script>
+const PLAYER_A = "斑目貘";
+const PLAYER_B = "夜神月";
+let _pollTimer = null;
+
+async function fetchReflections() {
+  try {
+    const resp = await fetch("/api/reflections");
+    const data = await resp.json();
+    const days = data.days || {};
+    render(days);
+    const dayCount = Object.keys(days).length;
+    document.getElementById("last-update").textContent =
+      new Date().toLocaleTimeString() + " · 已载入 " + dayCount + " 天" +
+      (data.game_over ? " · 游戏已结束" : "");
+    if (data.game_over) {
+      clearInterval(_pollTimer);
+      _pollTimer = null;
+    }
+  } catch(e) {
+    console.error("获取复盘数据失败:", e);
+  }
+}
+
+function formatText(text) {
+  if (!text) return '<div class="empty">暂无数据</div>';
+  // 转义 HTML 并保留换行
+  const escaped = text
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // 高亮胜率百分比如 (98.4%)
+  const highlighted = escaped.replace(
+    /（(\d+\.?\d*%)）/g,
+    '<span style="color:#f59e0b">（$1）</span>'
+  );
+  return highlighted;
+}
+
+function render(days) {
+  const dayKeys = Object.keys(days).sort((a,b) => a-b);
+  const colA = document.getElementById("col-a");
+  const colB = document.getElementById("col-b");
+
+  if (dayKeys.length === 0) {
+    colA.innerHTML = '<div class="empty">等待复盘数据...</div>';
+    colB.innerHTML = '<div class="empty">等待复盘数据...</div>';
+    return;
+  }
+
+  colA.innerHTML = dayKeys.map(d => {
+    const text = days[d][PLAYER_A] || "";
+    return `<div class="day-card">
+      <h3>第 ${d} 天</h3>
+      <div class="reflection-text">${formatText(text)}</div>
+    </div>`;
+  }).join("");
+
+  colB.innerHTML = dayKeys.map(d => {
+    const text = days[d][PLAYER_B] || "";
+    return `<div class="day-card">
+      <h3>第 ${d} 天</h3>
+      <div class="reflection-text">${formatText(text)}</div>
+    </div>`;
+  }).join("");
+}
+
+// 初始加载
+fetchReflections();
+// 每 3 秒自动刷新（游戏结束后停止）
+_pollTimer = setInterval(fetchReflections, 3000);
+</script>
+</body>
+</html>

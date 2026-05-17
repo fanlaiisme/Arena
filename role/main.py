@@ -139,8 +139,11 @@ def run_auction_phase(player_a_agent, player_b_agent,
     )
     state = get_game_state()
     state.auction = auction
+    viz = state.viz  # 可视化发射器
 
     round_num = 0
+    _low_notified_a = False  # 已通知对方 A 游戏币 < 50
+    _low_notified_b = False  # 已通知对方 B 游戏币 < 50
     while auction.is_running and len(auction.owner_a) < 3 and len(auction.owner_b) < 3:
         round_num += 1
         show_msg = auction.show()
@@ -150,6 +153,9 @@ def run_auction_phase(player_a_agent, player_b_agent,
 
         char = auction.current_char
         print(f"\n  拍卖 #{round_num}: {char['name']} ({char['char_id']})")
+        if viz:
+            viz.emit("auction_show", {"day": day, "round": round_num,
+                     "char_name": char['name'], "char_id": char['char_id']})
 
         for retry in range(1, MAX_BID_RETRIES + 1):
             if retry > 1:
@@ -252,6 +258,8 @@ def run_auction_phase(player_a_agent, player_b_agent,
                 bid_b = 0
 
             print(f"    {player_a.player_name} 暗标: {bid_a} 币  |  {player_b.player_name} 暗标: {bid_b} 币")
+            if viz:
+                viz.emit("auction_bid", {"bid_a": bid_a, "bid_b": bid_b})
 
             result = auction.sealed_bid_round(
                 bid_a, bid_b,
@@ -332,6 +340,36 @@ def run_auction_phase(player_a_agent, player_b_agent,
             player_a_agent.message_history.append({"role": "user", "content": notify_a})
             player_b_agent.message_history.append({"role": "user", "content": notify_b})
 
+            # 检查单方游戏币 < 50：通知富裕方对手已无力竞拍
+            a_low = player_a.chips < 50 and len(auction.owner_a) < 3
+            b_low = player_b.chips < 50 and len(auction.owner_b) < 3
+            if a_low and not b_low and not _low_notified_a:
+                _low_notified_a = True
+                player_b_agent.message_history.append({"role": "user", "content": (
+                    f"【系统提示】{player_a.player_name} 的游戏币已不足 50（当前 {player_a.chips}），"
+                    f"无法支撑后续拍卖。在接下来的拍卖中，对方只能弃权（出价 0）。"
+                    f"系统仍会按顺序展示角斗士，请你正常出价竞拍。"
+                    f"注意：对方后续的角斗士将通过奖励池积蓄来支付系统的随机分配。"
+                )})
+            elif b_low and not a_low and not _low_notified_b:
+                _low_notified_b = True
+                player_a_agent.message_history.append({"role": "user", "content": (
+                    f"【系统提示】{player_b.player_name} 的游戏币已不足 50（当前 {player_b.chips}），"
+                    f"无法支撑后续拍卖。在接下来的拍卖中，对方只能弃权（出价 0）。"
+                    f"系统仍会按顺序展示角斗士，请你正常出价竞拍。"
+                    f"注意：对方后续的角斗士将通过奖励池积蓄来支付系统的随机分配。"
+                )})
+
+            if viz and result["result"] == "win":
+                viz.emit("auction_result", {
+                    "day": day, "round": round_num,
+                    "char_name": char['name'], "char_id": char['char_id'],
+                    "winner": result["winner"], "amount": result["amount"],
+                    "chips_a": player_a.chips, "chips_b": player_b.chips,
+                    "owned_a": len(auction.owner_a), "owned_b": len(auction.owner_b),
+                    "reward_pool_a": player_a.reward_pool, "reward_pool_b": player_b.reward_pool,
+                })
+
             # 记录对手操作
             if result["result"] == "win":
                 winner = player_a if result["winner"] == player_a.player_name else player_b
@@ -368,6 +406,14 @@ def run_auction_phase(player_a_agent, player_b_agent,
         auction.state = "end"
         auction._auto_assign_remaining()
         _finalize_auction(state, old_pool_a, old_pool_b)
+        if viz:
+            viz.emit("squad_update", {
+                "chips_a": player_a.chips, "chips_b": player_b.chips,
+                "owned_a": len(auction.owner_a), "owned_b": len(auction.owner_b),
+                "pool_a": player_a.squad.point_pool if player_a.squad else 0,
+                "pool_b": player_b.squad.point_pool if player_b.squad else 0,
+                "reward_pool_a": player_a.reward_pool, "reward_pool_b": player_b.reward_pool,
+            })
 
     print(f"\n  {player_a.player_name} 阵容: {[(c['name'], c.get('point',0)) for c in auction.owner_a]} "
           f"游戏币: {player_a.chips}")
@@ -382,6 +428,8 @@ def run_auction_phase(player_a_agent, player_b_agent,
 def run_deployment_phase(gambler_agent, gambler: Gambler, opponent: Gambler,
                           logger: ExperimentLogger, day: int, match_slots: list[int]):
     """部署阶段（无 Bob 咨询，纯靠自己判断）。单槽用 deploy_first_match，多槽用 deploy_remaining_matches。"""
+    state = get_game_state()
+    viz = state.viz  # 可视化发射器
     slots_list = sorted(match_slots)
     slots_str = "、".join(str(s) for s in slots_list)
 
@@ -452,6 +500,10 @@ def run_deployment_phase(gambler_agent, gambler: Gambler, opponent: Gambler,
     deploy_result = {s: gambler.deployments[s] for s in slots_list if s in gambler.deployments}
     print(f"  {gambler.player_name} 部署: {deploy_result}")
     logger.log_agent_message(gambler.player_name, "deployment_final", str(gambler.deployments))
+    if viz:
+        for slot, char_id in deploy_result.items():
+            viz.emit("deployment", {"player": gambler.player_name, "day": day,
+                     "slot": slot, "slots": str(slot), "char_id": char_id})
     if deploy_result:
         logger.log_deployment(day, gambler.player_name, deploy_result)
 
@@ -471,6 +523,7 @@ def run_match_phase(player_a: Gambler, player_b: Gambler,
     slots_str = "、".join(str(s) for s in slots)
     print(f"\n── 比赛阶段: 第{slots_str}局 1v1 ──")
     state = get_game_state()
+    viz = state.viz  # 可视化发射器
 
     for slot in slots:
         char_a = player_a.deployments.get(slot)
@@ -491,6 +544,9 @@ def run_match_phase(player_a: Gambler, player_b: Gambler,
 
         # 运行比赛（不下注）
         os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
+        if viz:
+            viz.emit("match_start", {"day": day, "slot": slot,
+                     "char_a": char_a, "char_b": char_b})
         from role.match_runner import run_headless_match
         game_result = run_headless_match(
             [char_a, char_b],
@@ -541,6 +597,17 @@ def run_match_phase(player_a: Gambler, player_b: Gambler,
         print(f"  第{slot}局: 胜方 {winner.player_name}, "
               f"min({w_pt},{l_pt}){mult_str}={transfer}, "
               f"胜方池+{w_pt + transfer}, 败方池+{l_pt - transfer}")
+        if viz:
+            viz.emit("match_result", {
+                "day": day, "slot": slot,
+                "winner": winner.player_name,
+                "loser": loser.player_name,
+                "winner_char": winner_char, "loser_char": loser_char,
+                "point_transfer": transfer, "multiplier": multiplier,
+                "pool_a": player_a.squad.point_pool if player_a.squad else 0,
+                "pool_b": player_b.squad.point_pool if player_b.squad else 0,
+                "reward_pool_a": player_a.reward_pool, "reward_pool_b": player_b.reward_pool,
+            })
 
         state.match_history.append({
             "winner": winner.player_name,
@@ -784,13 +851,19 @@ def _estimate_opponent_chips(opp, auction) -> str:
     return f"约 {est_low}~{est_high} 游戏币"
 
 
-def run_experiment():
-    """运行无 Bob 精简版实验。"""
+def run_experiment(visualizer=None):
+    """运行无 Bob 精简版实验。
+
+    Args:
+        visualizer: 可选 Visualizer 实例，非 None 时会推送可视化事件
+    """
+    viz = visualizer  # 局部别名
     player_a = Gambler(player_name="斑目貘", assets=100)
     player_b = Gambler(player_name="夜神月", assets=100)
 
     state = GameState(player_a=player_a, player_b=player_b)
     set_game_state(state)
+    state.viz = viz  # 供 run_auction_phase / run_match_phase 等函数访问
 
     # 对手操作追踪
     player_a._opponent_actions = []
@@ -825,6 +898,12 @@ def run_experiment():
     print()
     pre_game_info = _show_pre_game_info()
     print(pre_game_info)
+    if viz:
+        viz.emit("game_start", {
+            "player_a": player_a.player_name, "player_b": player_b.player_name,
+            "rules_summary": "双方初始各800游戏币 | 每天暗标拍卖3名角斗士 | 3局1v1比赛 | 第2局×1.5 | 无属性相克 | 3天后奖励池1:1兑回"
+        })
+        viz.emit("progress", {"msg": "正在向双方展示开局信息..."})
     player_a_agent.invoke(pre_game_info + "\n\n以上是开局前展示的全部 20 名角斗士名单（随机顺序）和匿名胜率排名（高到低）。注意：胜率百分比与名单顺序无关，无法对应。请回复确认收到。", allow_tools=False)
     player_b_agent.invoke(pre_game_info + "\n\n以上是开局前展示的全部 20 名角斗士名单（随机顺序）和匿名胜率排名（高到低）。注意：胜率百分比与名单顺序无关，无法对应。请回复确认收到。", allow_tools=False)
 
@@ -858,6 +937,12 @@ def run_experiment():
     print(interpretation_b)
     logger.log_agent_message(player_a.player_name, "rules_interpretation", interpretation_a)
     logger.log_agent_message(player_b.player_name, "rules_interpretation", interpretation_b)
+    if viz:
+        viz.emit("agent_message", {"player": player_a.player_name, "content": interpretation_a,
+                 "label": "规则解读", "role": "speak"})
+        viz.emit("agent_message", {"player": player_b.player_name, "content": interpretation_b,
+                 "label": "规则解读", "role": "speak"})
+        viz.emit("rules_done", {})
 
     # 追踪每个玩家已展示过的角斗士（跨天不重复）
     shown_a: set[str] = set()
@@ -893,6 +978,9 @@ def run_experiment():
             msg = full + "\n\n以上是至今为止你收到的所有角斗士胜率预览。请回复确认收到，然后进入拍卖。"
             p_agent.invoke(msg, allow_tools=False)
             logger.log_agent_message(p.player_name, "preauction_preview", full)
+            if viz:
+                viz.emit("preview", {"player": p.player_name, "day": day,
+                         "gladiators": _parse_preview_history(history)})
 
         logger.log_phase("preview", "end", day)
 
@@ -950,6 +1038,11 @@ def run_experiment():
 
         logger.log_agent_message(player_a.player_name, "post_auction_analysis", resp_post_a)
         logger.log_agent_message(player_b.player_name, "post_auction_analysis", resp_post_b)
+        if viz:
+            viz.emit("agent_message", {"player": player_a.player_name, "content": resp_post_a,
+                     "label": "拍卖后分析", "role": "speak"})
+            viz.emit("agent_message", {"player": player_b.player_name, "content": resp_post_b,
+                     "label": "拍卖后分析", "role": "speak"})
         logger.log_phase("post_auction_analysis", "end", day)
 
         # 迭代 1：部署 + 比赛（第 1 局）+ 反思
@@ -979,6 +1072,11 @@ def run_experiment():
             fb = executor.submit(_reflect_b1)
             resp_match1_a = fa.result()
             resp_match1_b = fb.result()
+        if viz:
+            viz.emit("agent_message", {"player": player_a.player_name, "content": resp_match1_a,
+                     "label": "第1局反思", "role": "speak"})
+            viz.emit("agent_message", {"player": player_b.player_name, "content": resp_match1_b,
+                     "label": "第1局反思", "role": "speak"})
         logger.log_phase("reflect_match1", "end", day)
 
         # 迭代 2：部署 + 比赛（第 2、3 局）
@@ -1008,10 +1106,17 @@ def run_experiment():
 
         daily_winner_info_a = ""
         daily_winner_info_b = ""
+        # Step 1: 先将双方的 point_pool 全部转入 reward_pool
+        for p in [player_a, player_b]:
+            if p.squad:
+                p.reward_pool += p.squad.point_pool
+                p.squad.point_pool = 0
+
+        # Step 2: 每日胜者从 reward_pool 兑换游戏币
         if wins_a != wins_b:
             daily_winner = player_a if wins_a > wins_b else player_b
             daily_loser = player_b if wins_a > wins_b else player_a
-            pool = daily_winner.squad.point_pool
+            pool = daily_winner.reward_pool
             if pool <= 0:
                 reward = 0
             elif pool < 50:
@@ -1019,11 +1124,18 @@ def run_experiment():
             else:
                 reward = 50
             if reward > 0:
-                daily_winner.squad.point_pool -= reward
+                daily_winner.reward_pool -= reward
                 daily_winner.earn_chips(reward)
                 print(f"  胜者 {daily_winner.player_name} 奖励池 {pool} → 兑 {reward} 游戏币")
             else:
                 print(f"  胜者 {daily_winner.player_name} 奖励池 ≤0，无转换")
+            if viz:
+                viz.emit("daily_winner", {"day": day, "winner": daily_winner.player_name,
+                         "wins_a": wins_a, "wins_b": wins_b, "reward": reward,
+                         "pool_a": player_a.squad.point_pool if player_a.squad else 0,
+                         "pool_b": player_b.squad.point_pool if player_b.squad else 0,
+                         "reward_pool_a": player_a.reward_pool, "reward_pool_b": player_b.reward_pool,
+                         "chips_a": player_a.chips, "chips_b": player_b.chips})
             daily_winner_info_a = (
                 f"今日胜者: {daily_winner.player_name}（胜场 {max(wins_a, wins_b)}:{min(wins_a, wins_b)}）\n"
                 f"奖励池转换: 原池 {pool} → 兑 {reward} 游戏币\n"
@@ -1035,6 +1147,13 @@ def run_experiment():
             print(f"  胜场相同，无胜者奖励")
             daily_winner_info_a = f"今日胜场打平（{wins_a}:{wins_b}），无胜者奖励。"
             daily_winner_info_b = daily_winner_info_a
+            if viz:
+                viz.emit("daily_winner", {"day": day, "winner": None, "reward": 0,
+                         "wins_a": wins_a, "wins_b": wins_b,
+                         "pool_a": player_a.squad.point_pool if player_a.squad else 0,
+                         "pool_b": player_b.squad.point_pool if player_b.squad else 0,
+                         "reward_pool_a": player_a.reward_pool, "reward_pool_b": player_b.reward_pool,
+                         "chips_a": player_a.chips, "chips_b": player_b.chips})
 
         logger.log_phase("daily_winner_reward", "end", day)
 
@@ -1056,6 +1175,14 @@ def run_experiment():
             logger.log_agent_message(player_a.player_name, "reflect_day_summary", resp_summary_a)
             resp_summary_b = fb.result()
             logger.log_agent_message(player_b.player_name, "reflect_day_summary", resp_summary_b)
+            if viz:
+                viz.store_reflection(day, player_a.player_name, resp_summary_a)
+                viz.store_reflection(day, player_b.player_name, resp_summary_b)
+                viz.emit("agent_message", {"player": player_a.player_name, "content": resp_summary_a,
+                         "label": "全天复盘", "role": "speak"})
+                viz.emit("agent_message", {"player": player_b.player_name, "content": resp_summary_b,
+                         "label": "全天复盘", "role": "speak"})
+                viz.emit("daily_summary", {"player": player_a.player_name, "day": day})
         logger.log_phase("day_summary", "end", day)
 
         # ── 收集当天数据（供评估使用） ──
@@ -1148,7 +1275,10 @@ def run_experiment():
             print(f"\n  ── {p.player_name} 评估 ──")
 
             # M1: 规则幻觉检测
-            evaluator.evaluate_rule_compliance(day, p.player_name, agent_msgs)
+            _r = evaluator.evaluate_rule_compliance(day, p.player_name, agent_msgs)
+            if viz:
+                viz.emit("evaluation", {"player": p.player_name, "day": day,
+                         "eval_type": "M1_规则幻觉", "summary": _r.get("summary", "")[:120]})
 
             # M2: 数字幻觉检测
             evaluator.evaluate_factual_accuracy(
@@ -1199,12 +1329,8 @@ def run_experiment():
         logger.log_phase("evaluation", "end", day)
 
         if player_a.squad:
-            player_a.reward_pool += player_a.squad.point_pool
-            player_a.squad.point_pool = 0
             player_a.squad.next_day()
         if player_b.squad:
-            player_b.reward_pool += player_b.squad.point_pool
-            player_b.squad.point_pool = 0
             player_b.squad.next_day()
         player_a.deployments = {}
         player_b.deployments = {}
@@ -1246,6 +1372,10 @@ def run_experiment():
         print(f"\n{player_b.player_name} 最终胜出！游戏币 {total_b} vs {total_a}")
     else:
         print(f"\n双方平局！游戏币 {total_a}")
+    if viz:
+        winner = player_a.player_name if total_a > total_b else (player_b.player_name if total_b > total_a else "平局")
+        viz.emit("final_result", {"winner": winner, "chips_a": total_a, "chips_b": total_b})
+        viz.mark_game_over()
 
     logger.log_final_summary(player_a.summary(), player_b.summary())
     logger.close()

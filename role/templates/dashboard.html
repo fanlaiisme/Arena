@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arena 可视化仪表盘</title>
+<style>
+  :root {
+    --cl-a: #2563eb; --cl-a-bg: #1e293b; --cl-a-dim: #334155;
+    --cl-b: #dc2626; --cl-b-bg: #2d1e1e; --cl-b-dim: #4a2e2e;
+    --cl-gold: #f59e0b; --cl-green: #22c55e; --cl-gray: #64748b;
+    --bg: #0f172a; --panel: #1e293b; --text: #e2e8f0; --dim: #94a3b8;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    display: grid; grid-template-rows: 48px 1fr 120px;
+    height: 100vh; overflow: hidden;
+  }
+
+  /* 顶栏 */
+  #topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px; background: #1e293b; border-bottom: 1px solid #334155;
+  }
+  #topbar h1 { font-size: 18px; letter-spacing: .5px; }
+  #topbar .phase-badge {
+    background: #334155; padding: 4px 14px; border-radius: 12px; font-size: 13px;
+  }
+  #btn-start {
+    background: var(--cl-green); color: #000; border: none;
+    padding: 8px 22px; border-radius: 8px; font-size: 14px; cursor: pointer; font-weight: 600;
+  }
+  #btn-start:hover { opacity: .85; }
+  #btn-start:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-reflections {
+    background: #334155; color: var(--text); border: 1px solid #475569;
+    padding: 8px 18px; border-radius: 8px; font-size: 13px; cursor: pointer;
+  }
+  .btn-reflections:hover { background: #475569; }
+
+  /* 主区域: 3 列 */
+  #main {
+    display: grid; grid-template-columns: 1fr 340px 1fr; gap: 8px; padding: 8px;
+    min-height: 0;
+  }
+
+  /* 玩家面板 */
+  .player-panel {
+    display: flex; flex-direction: column; gap: 6px; min-height: 0;
+    border-radius: 10px; padding: 10px; overflow: hidden;
+  }
+  .player-panel.a { background: var(--cl-a-bg); border: 1px solid var(--cl-a); }
+  .player-panel.b { background: var(--cl-b-bg); border: 1px solid var(--cl-b); }
+
+  .panel-title {
+    font-size: 15px; font-weight: 700; padding: 4px 10px; border-radius: 6px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel-title.a { background: var(--cl-a); color: #fff; }
+  .panel-title.b { background: var(--cl-b); color: #fff; }
+  .player-avatar {
+    width: 48px; height: 48px; border-radius: 50%; object-fit: cover;
+    border: 2px solid rgba(255,255,255,0.3); flex-shrink: 0;
+  }
+
+  /* 情报卡片 */
+  .info-cards { display: flex; flex-direction: column; gap: 4px; }
+  .info-card {
+    background: #0f172a80; border-radius: 6px; padding: 6px 10px;
+    font-size: 12px; display: flex; justify-content: space-between;
+  }
+  .info-card .rate { color: var(--cl-gold); font-weight: 700; white-space: nowrap; }
+  .info-card .card-avatar {
+    width: 28px; height: 28px; border-radius: 50%; object-fit: cover;
+    border: 1px solid #475569; margin-right: 6px; flex-shrink: 0;
+  }
+  .info-card .card-left { display: flex; align-items: center; overflow: hidden; }
+  .info-card .card-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .info-header {
+    font-size: 11px; color: var(--dim); margin-bottom: 2px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .info-cards { display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; }
+
+  /* 发言日志 */
+  .chat-log {
+    flex: 1; min-height: 0; overflow-y: auto; font-size: 11px; line-height: 1.5;
+    background: #0f172a40; border-radius: 6px; padding: 6px;
+  }
+  .chat-log .msg { margin-bottom: 6px; padding: 4px 6px; border-radius: 4px; }
+  .chat-log .msg.think { background: #33415540; color: #94a3b8; font-style: italic; }
+  .chat-log .msg.speak { background: #1e3a5f40; }
+  .chat-log .msg .label { font-size: 10px; color: var(--dim); display: block; }
+
+  /* 中间面板 */
+  #center {
+    display: flex; flex-direction: column; gap: 8px; min-height: 0;
+    background: var(--panel); border-radius: 10px; padding: 12px;
+    border: 1px solid #334155; text-align: center; overflow: hidden;
+  }
+  #center h3 { font-size: 14px; color: var(--dim); margin-bottom: 4px; }
+  #auction-card {
+    background: #0f172a; border: 2px solid var(--cl-gold); border-radius: 12px;
+    padding: 20px; margin: 8px 0; display: none;
+  }
+  #auction-card .name { font-size: 24px; font-weight: 800; color: var(--cl-gold); }
+  #auction-card .id { font-size: 13px; color: var(--dim); margin: 4px 0; }
+  #auction-card .auction-avatar {
+    width: 160px; height: 160px; border-radius: 12px; object-fit: cover;
+    border: 2px solid var(--cl-gold); margin: 8px 0;
+  }
+  #rules-panel {
+    background: #0f172a; border-radius: 8px; padding: 12px; font-size: 11px;
+    text-align: left; line-height: 1.6; max-height: 300px; overflow-y: auto;
+    display: none;
+  }
+  #match-display {
+    background: #0f172a; border-radius: 8px; padding: 12px; margin: 4px 0;
+    display: none;
+  }
+  #match-display .vs { font-size: 20px; font-weight: 800; margin: 6px 0; }
+  #match-display .winner { color: var(--cl-gold); }
+  #result-area { flex: 1; min-height: 0; overflow-y: auto; font-size: 12px; }
+  .day-sep {
+    text-align: center; color: var(--cl-gold); font-weight: 700;
+    font-size: 13px; padding: 6px 0; margin: 4px 0;
+    border-bottom: 1px dashed #334155;
+  }
+
+  /* 底部状态栏 */
+  #statusbar {
+    display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid #334155;
+    background: #1e293b; padding: 8px 20px; font-size: 12px; gap: 12px;
+  }
+  .status-col { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .status-col.right { justify-content: flex-end; text-align: right; }
+  .stat { display: flex; flex-direction: column; }
+  .stat .val { font-size: 18px; font-weight: 700; }
+  .stat .lbl { font-size: 10px; color: var(--dim); }
+  .stat.a .val { color: var(--cl-a); }
+  .stat.b .val { color: var(--cl-b); }
+  .stat.pool .val { color: var(--cl-gold); }
+  .stat.reward .val { color: #a78bfa; }
+
+  /* 拍卖结果显示 */
+  .bid-result {
+    padding: 8px; border-radius: 6px; margin: 4px 0; font-size: 13px;
+  }
+  .bid-result.win-a { background: #1e3a5f; border: 1px solid var(--cl-a); }
+  .bid-result.win-b { background: #4a1e1e; border: 1px solid var(--cl-b); }
+</style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<div id="topbar">
+  <h1>🏟 Arena 仪表盘</h1>
+  <span class="phase-badge" id="phase-label">就绪</span>
+  <span style="font-size:13px;color:var(--dim)" id="day-label"></span>
+  <button id="btn-start" onclick="startGame()">▶ 开始游戏</button>
+  <button class="btn-reflections" onclick="window.open('/reflections','_blank')">📊 每日复盘</button>
+</div>
+
+<!-- 主区域 -->
+<div id="main">
+  <!-- 玩家 A -->
+  <div class="player-panel a">
+    <div class="panel-title a">
+      <img class="player-avatar" src="/players/斑目貘.png" alt="" />
+      <span id="title-a">玩家A</span>
+    </div>
+    <div class="info-header">📊 情报预览 (<span id="count-a">0</span>名)</div>
+    <div class="info-cards" id="cards-a"></div>
+    <div class="chat-log" id="chat-a"></div>
+  </div>
+
+  <!-- 中间 -->
+  <div id="center">
+    <h3 id="center-title"></h3>
+    <div id="rules-panel"></div>
+    <div id="auction-card">
+      <img class="auction-avatar" id="auction-img" src="" alt="" />
+      <div class="name" id="auction-name"></div>
+      <div class="id" id="auction-id"></div>
+    </div>
+    <div id="match-display">
+      <div style="display:flex;align-items:center;justify-content:center;gap:12px;">
+        <div style="text-align:center">
+          <img id="match-img-a" src="" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:2px solid var(--cl-a)" alt="" />
+          <div id="match-char-a" style="font-size:13px;margin-top:4px"></div>
+        </div>
+        <span style="font-size:20px;font-weight:800">VS</span>
+        <div style="text-align:center">
+          <img id="match-img-b" src="" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:2px solid var(--cl-b)" alt="" />
+          <div id="match-char-b" style="font-size:13px;margin-top:4px"></div>
+        </div>
+      </div>
+      <div id="match-result" style="margin-top:8px"></div>
+    </div>
+    <div id="result-area"></div>
+  </div>
+
+  <!-- 玩家 B -->
+  <div class="player-panel b">
+    <div class="panel-title b">
+      <img class="player-avatar" src="/players/夜神月.png" alt="" />
+      <span id="title-b">玩家B</span>
+    </div>
+    <div class="info-header">📊 情报预览 (<span id="count-b">0</span>名)</div>
+    <div class="info-cards" id="cards-b"></div>
+    <div class="chat-log" id="chat-b"></div>
+  </div>
+</div>
+
+<!-- 底部状态栏 -->
+<div id="statusbar">
+  <div class="status-col" id="status-a"></div>
+  <div class="status-col right" id="status-b"></div>
+</div>
+
+<script>
+const evtSource = new EventSource("/events");
+let playerAName = "玩家A";
+let playerBName = "玩家B";
+let _resultDay = 0;
+
+evtSource.onopen = function() {
+  setPhase("就绪 — SSE 已连接");
+  console.log("SSE 连接已建立");
+};
+
+evtSource.onmessage = function(e) {
+  const evt = JSON.parse(e.data);
+  console.log("SSE event:", evt.type, evt.data);
+  handle(evt.type, evt.data);
+};
+
+evtSource.onerror = function(e) {
+  console.error("SSE 连接错误", e);
+  setPhase("SSE 连接断开，正在重连...");
+};
+
+function handle(type, d) {
+  switch(type) {
+    case "game_start":
+      setNames(d.player_a, d.player_b);
+      setPhase("开局信息展示中");
+      setDay("");
+      clearAll();
+      showRules(d.rules_summary || "游戏规则加载中...");
+      break;
+
+    case "progress":
+      setPhase(d.msg);
+      break;
+
+    case "rules_done":
+      hideRules();
+      setPhase("情报阶段");
+      break;
+
+    case "preview":
+      setPhase("情报预览");
+      setDay(d.day);
+      setCards(d.player === playerAName ? "a" : "b", d.gladiators);
+      if (d.day !== _resultDay) {
+        _resultDay = d.day;
+        appendResult(`<div class="day-sep">── 第 ${d.day} 天 ──</div>`);
+      }
+      break;
+
+    case "auction_show":
+      setPhase("拍卖中");
+      setDay(d.day);
+      showAuction(d.char_name, d.char_id);
+      break;
+
+    case "auction_bid":
+      appendResult(`双方已出价：${playerAName} ${d.bid_a} 币 | ${playerBName} ${d.bid_b} 币`);
+      break;
+
+    case "squad_update":
+      updateStatus(d.chips_a, d.chips_b, d.owned_a, d.owned_b, d.pool_a, d.pool_b, d.reward_pool_a, d.reward_pool_b);
+      break;
+
+    case "auction_result": {
+      hideAuction();
+      const w = d.winner, cls = w === playerAName ? "win-a" : "win-b";
+      appendResult(`<div class="bid-result ${cls}">${w} 以 ${d.amount} 币拍下 ${d.char_name}</div>`);
+      updateStatus(d.chips_a, d.chips_b, d.owned_a, d.owned_b, undefined, undefined, d.reward_pool_a, d.reward_pool_b);
+      break;
+    }
+
+    case "deployment":
+      appendChat(d.player === playerAName ? "a" : "b",
+        `📋 部署第${d.slots}局: ${d.char_id}`, "speak");
+      break;
+
+    case "match_start":
+      setPhase("比赛中");
+      setDay(d.day);
+      showMatch(d.char_a, d.char_b, d.slot);
+      break;
+
+    case "match_result":
+      showMatchResult(d.winner, d.loser_char, d.point_transfer, d.multiplier, d.slot);
+      if (d.pool_a !== undefined) updatePool(d.pool_a, d.pool_b, d.reward_pool_a, d.reward_pool_b);
+      { const mult = d.multiplier !== 1 ? ` ×${d.multiplier}` : "";
+        appendResult(`⚔️ 第${d.slot}局: ${d.winner_char} vs ${d.loser_char} → ${d.winner} 胜！转移 ${d.point_transfer} point${mult}`); }
+      break;
+
+    case "agent_message": {
+      const side = d.player === playerAName ? "a" : "b";
+      const cls = d.role && d.role.includes("think") ? "think" : "speak";
+      const prefix = cls === "think" ? "💭 思考" : "💬";
+      const label = d.label ? `<span class="label">${d.label}</span>` : "";
+      appendChat(side, `${label}${prefix} ${truncate(d.content, 1200)}`, cls);
+      break;
+    }
+
+    case "daily_winner":
+      setPhase("每日胜者奖励");
+      if (d.winner) {
+        appendResult(`🏆 ${d.winner} 为本日胜者！兑 ${d.reward} 游戏币`);
+      } else {
+        appendResult("⚖️ 今日胜场打平，无胜者奖励");
+      }
+      updateStatus(d.chips_a, d.chips_b, undefined, undefined, d.pool_a, d.pool_b, d.reward_pool_a, d.reward_pool_b);
+      break;
+
+    case "daily_summary":
+      setPhase("全天复盘");
+      appendChat(d.player === playerAName ? "a" : "b",
+        `📝 全天复盘已生成`, "speak");
+      break;
+
+    case "evaluation":
+      appendChat(d.player === playerAName ? "a" : "b",
+        `📊 ${d.eval_type}: ${d.summary}`, "think");
+      break;
+
+    case "final_result":
+      setPhase("最终结算");
+      setDay("");
+      hideMatch();
+      // 中间面板展示胜者
+      document.getElementById("center-title").textContent = "🏆 胜者";
+      const winnerImg = document.getElementById("auction-img");
+      winnerImg.src = `/players/${d.winner}.png`;
+      winnerImg.style.borderRadius = "50%";
+      winnerImg.style.width = "120px";
+      winnerImg.style.height = "120px";
+      document.getElementById("auction-name").textContent = d.winner;
+      document.getElementById("auction-id").textContent = "";
+      document.getElementById("auction-card").style.display = "block";
+      // 结果区
+      appendResult(`<h3>🏆 ${d.winner} 最终胜出！</h3>`);
+      appendResult(`${playerAName}: ${d.chips_a} 币 | ${playerBName}: ${d.chips_b} 币`);
+      updateStatus(d.chips_a, d.chips_b, 3, 3);
+      document.getElementById("btn-start").disabled = false;
+      break;
+
+    case "error":
+      appendResult(`<span style="color:red">❌ ${d.msg}</span>`);
+      document.getElementById("btn-start").disabled = false;
+      break;
+  }
+}
+
+// ── 辅助函数 ──
+
+function setNames(a, b) { playerAName = a; playerBName = b;
+  document.getElementById("title-a").textContent = a;
+  document.getElementById("title-b").textContent = b;
+  // 更新头像 src（玩家名可能变化）
+  const ava = document.querySelector(".player-panel.a .player-avatar");
+  const avb = document.querySelector(".player-panel.b .player-avatar");
+  if (ava) ava.src = `/players/${a}.png`;
+  if (avb) avb.src = `/players/${b}.png`;
+}
+
+function setPhase(text) {
+  document.getElementById("phase-label").textContent = text;
+}
+
+function setDay(day) {
+  document.getElementById("day-label").textContent = day ? `第${day}天` : "";
+}
+
+function clearAll() {
+  document.getElementById("chat-a").innerHTML = "";
+  document.getElementById("chat-b").innerHTML = "";
+  document.getElementById("cards-a").innerHTML = "";
+  document.getElementById("cards-b").innerHTML = "";
+  document.getElementById("count-a").textContent = "0";
+  document.getElementById("count-b").textContent = "0";
+  document.getElementById("result-area").innerHTML = "";
+  document.getElementById("center-title").textContent = "";
+  document.getElementById("status-a").innerHTML = "";
+  document.getElementById("status-b").innerHTML = "";
+  _resultDay = 0;
+  hideAuction(); hideMatch(); hideRules();
+}
+
+function showRules(text) {
+  const el = document.getElementById("rules-panel");
+  el.innerHTML = text.replace(/\n/g, "<br>");
+  el.style.display = "block";
+}
+
+function hideRules() {
+  document.getElementById("rules-panel").style.display = "none";
+}
+
+function setCards(side, gladiators) {
+  const el = document.getElementById("cards-" + side);
+  document.getElementById("count-" + side).textContent = gladiators.length;
+  el.innerHTML = gladiators.map(g =>
+    `<div class="info-card">
+      <span class="card-left">
+        <img class="card-avatar" src="/avatars/${g.char_id}.png"
+             onerror="this.style.display='none'" alt="" />
+        <span class="card-name">${g.name}</span>
+      </span>
+      <span class="rate">${(g.win_rate*100).toFixed(1)}%</span>
+    </div>`
+  ).join("");
+}
+
+function showAuction(name, id) {
+  document.getElementById("center-title").textContent = "当前拍品";
+  const img = document.getElementById("auction-img");
+  img.src = `/avatars/${id}.png`;
+  img.style.borderRadius = "12px";
+  img.style.width = "160px";
+  img.style.height = "160px";
+  document.getElementById("auction-name").textContent = name;
+  document.getElementById("auction-id").textContent = id;
+  document.getElementById("auction-card").style.display = "block";
+}
+
+function hideAuction() {
+  document.getElementById("auction-card").style.display = "none";
+  document.getElementById("auction-img").src = "";
+}
+
+function showMatch(a, b, slot) {
+  document.getElementById("center-title").textContent = `第${slot}局`;
+  document.getElementById("match-img-a").src = `/avatars/${a}.png`;
+  document.getElementById("match-img-b").src = `/avatars/${b}.png`;
+  document.getElementById("match-char-a").textContent = a;
+  document.getElementById("match-char-b").textContent = b;
+  document.getElementById("match-result").innerHTML = "";
+  document.getElementById("match-display").style.display = "block";
+}
+
+function hideMatch() {
+  document.getElementById("match-display").style.display = "none";
+  document.getElementById("match-img-a").src = "";
+  document.getElementById("match-img-b").src = "";
+}
+
+function showMatchResult(winner, loserChar, points, mult, slot) {
+  const multStr = mult !== 1 ? ` ×${mult}` : "";
+  document.getElementById("match-result").innerHTML =
+    `<span class="winner">${winner} 胜！</span> point 转移: ${points}${multStr}`;
+}
+
+function appendChat(side, text, cls) {
+  const el = document.getElementById("chat-" + side);
+  el.innerHTML += `<div class="msg ${cls}">${text}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function appendResult(html) {
+  const el = document.getElementById("result-area");
+  el.innerHTML += html + "<br>";
+  el.scrollTop = el.scrollHeight;
+}
+
+function updateStatus(chipsA, chipsB, ownedA, ownedB, poolA, poolB, rpA, rpB) {
+  const poolHtmlA = poolA !== undefined
+    ? `<div class="stat pool"><span class="val">${poolA}</span><span class="lbl">point池</span></div>` : "";
+  const poolHtmlB = poolB !== undefined
+    ? `<div class="stat pool"><span class="val">${poolB}</span><span class="lbl">point池</span></div>` : "";
+  const rpHtmlA = rpA !== undefined
+    ? `<div class="stat reward"><span class="val">${rpA}</span><span class="lbl">蓄奖池</span></div>` : "";
+  const rpHtmlB = rpB !== undefined
+    ? `<div class="stat reward"><span class="val">${rpB}</span><span class="lbl">蓄奖池</span></div>` : "";
+  const ownedHtmlA = ownedA !== undefined
+    ? `<div class="stat"><span class="val">${ownedA}/3</span><span class="lbl">角斗士</span></div>` : "";
+  const ownedHtmlB = ownedB !== undefined
+    ? `<div class="stat"><span class="val">${ownedB}/3</span><span class="lbl">角斗士</span></div>` : "";
+  document.getElementById("status-a").innerHTML =
+    `<div class="stat a"><span class="val">${chipsA}</span><span class="lbl">游戏币</span></div>
+     ${ownedHtmlA}${poolHtmlA}${rpHtmlA}`;
+  document.getElementById("status-b").innerHTML =
+    `${rpHtmlB}${poolHtmlB}${ownedHtmlB}
+     <div class="stat b"><span class="val">${chipsB}</span><span class="lbl">游戏币</span></div>`;
+}
+
+function updatePool(poolA, poolB, rpA, rpB) {
+  // 仅更新 point池 / 蓄奖池 数值，不改变其他状态
+  function _updateOne(side, cls, val) {
+    if (val === undefined) return;
+    const el = document.getElementById("status-" + side);
+    const span = el.querySelector(".stat." + cls + " .val");
+    if (span) { span.textContent = val; }
+    else {
+      const label = cls === "pool" ? "point池" : "蓄奖池";
+      const pos = (side === "a") ? "beforeend" : "afterbegin";
+      el.insertAdjacentHTML(pos,
+        `<div class="stat ${cls}"><span class="val">${val}</span><span class="lbl">${label}</span></div>`);
+    }
+  }
+  _updateOne("a", "pool", poolA);
+  _updateOne("b", "pool", poolB);
+  _updateOne("a", "reward", rpA);
+  _updateOne("b", "reward", rpB);
+}
+
+function truncate(text, len) {
+  return text && text.length > len ? text.slice(0, len) + "..." : text;
+}
+
+async function startGame() {
+  document.getElementById("btn-start").disabled = true;
+  clearAll();
+  setPhase("启动中...");
+  try {
+    const resp = await fetch("/start", { method: "POST" });
+    const json = await resp.json();
+    console.log("/start response:", json);
+    if (json.status !== "ok") {
+      setPhase("错误: " + json.msg);
+      document.getElementById("btn-start").disabled = false;
+    } else {
+      setPhase("游戏线程已启动，等待事件...");
+    }
+  } catch(e) {
+    console.error("POST /start failed:", e);
+    setPhase("连接失败: " + e.message);
+    document.getElementById("btn-start").disabled = false;
+  }
+}
+</script>
+</body>
+</html>
