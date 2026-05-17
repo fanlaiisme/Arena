@@ -60,6 +60,29 @@
     white-space: nowrap; flex-shrink: 0; margin-top: 2px;
   }
   .btn-back:hover { background: #475569; }
+  .opponent-chips {
+    font-size: 12px; color: #4ade80; margin-top: 8px;
+    padding: 6px 10px; background: #0f2a1a; border-radius: 6px;
+    border: 1px solid #166534;
+  }
+  .truth-section { margin-top: 24px; }
+  .truth-toggle {
+    background: #334155; color: var(--text); border: 1px solid #475569;
+    padding: 10px 20px; border-radius: 8px; font-size: 14px; cursor: pointer;
+    margin-bottom: 8px;
+  }
+  .truth-toggle:hover { background: #475569; }
+  .truth-table {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+    background: var(--panel); border-radius: 10px; overflow: hidden;
+  }
+  .truth-table th, .truth-table td {
+    padding: 8px 12px; text-align: center; border-bottom: 1px solid #334155;
+  }
+  .truth-table th { color: var(--dim); font-weight: 600; background: #1a2332; }
+  .truth-table td { color: var(--text); }
+  .truth-table .rank-num { color: #f59e0b; font-weight: 700; }
+  .truth-table .win-pct { color: #60a5fa; }
 </style>
 </head>
 <body>
@@ -89,17 +112,25 @@
   </div>
 </div>
 
+<div class="truth-section">
+  <button class="truth-toggle" onclick="toggleTruth()">📊 完整胜率排名 Ground Truth</button>
+  <div id="truth-content" style="display:none;"></div>
+</div>
+
 <script>
 const PLAYER_A = "斑目貘";
 const PLAYER_B = "夜神月";
 let _pollTimer = null;
+let _rankingTruth = [];
 
 async function fetchReflections() {
   try {
     const resp = await fetch("/api/reflections");
     const data = await resp.json();
     const days = data.days || {};
+    _rankingTruth = data.ranking_truth || [];
     render(days);
+    renderTruth();
     const dayCount = Object.keys(days).length;
     document.getElementById("last-update").textContent =
       new Date().toLocaleTimeString() + " · 已载入 " + dayCount + " 天" +
@@ -115,15 +146,20 @@ async function fetchReflections() {
 
 function formatText(text) {
   if (!text) return '<div class="empty">暂无数据</div>';
-  // 转义 HTML 并保留换行
   const escaped = text
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  // 高亮胜率百分比如 (98.4%)
   const highlighted = escaped.replace(
     /（(\d+\.?\d*%)）/g,
     '<span style="color:#f59e0b">（$1）</span>'
   );
   return highlighted;
+}
+
+function _getPlayerData(days, day, player) {
+  const entry = days[day] && days[day][player];
+  if (!entry) return { text: "", opponent_chips: null };
+  if (typeof entry === "string") return { text: entry, opponent_chips: null };
+  return { text: entry.text || "", opponent_chips: entry.opponent_chips };
 }
 
 function render(days) {
@@ -138,20 +174,56 @@ function render(days) {
   }
 
   colA.innerHTML = dayKeys.map(d => {
-    const text = days[d][PLAYER_A] || "";
+    const { text, opponent_chips } = _getPlayerData(days, d, PLAYER_A);
+    let chipsHtml = "";
+    if (opponent_chips !== null && opponent_chips !== undefined) {
+      chipsHtml = `<div class="opponent-chips">📊 对手实际游戏币: ${opponent_chips}</div>`;
+    }
     return `<div class="day-card">
       <h3>第 ${d} 天</h3>
       <div class="reflection-text">${formatText(text)}</div>
+      ${chipsHtml}
     </div>`;
   }).join("");
 
   colB.innerHTML = dayKeys.map(d => {
-    const text = days[d][PLAYER_B] || "";
+    const { text, opponent_chips } = _getPlayerData(days, d, PLAYER_B);
+    let chipsHtml = "";
+    if (opponent_chips !== null && opponent_chips !== undefined) {
+      chipsHtml = `<div class="opponent-chips">📊 对手实际游戏币: ${opponent_chips}</div>`;
+    }
     return `<div class="day-card">
       <h3>第 ${d} 天</h3>
       <div class="reflection-text">${formatText(text)}</div>
+      ${chipsHtml}
     </div>`;
   }).join("");
+}
+
+function renderTruth() {
+  const container = document.getElementById("truth-content");
+  if (!_rankingTruth || _rankingTruth.length === 0) {
+    container.innerHTML = '<div class="empty">等待数据...</div>';
+    return;
+  }
+  const rows = _rankingTruth.map(g => {
+    const pct = (g.win_rate * 100).toFixed(1) + "%";
+    return `<tr>
+      <td class="rank-num">#${g.rank}</td>
+      <td>${g.name}</td>
+      <td style="color:#94a3b8">${g.char_id}</td>
+      <td class="win-pct">${pct}</td>
+    </tr>`;
+  }).join("");
+  container.innerHTML = `<table class="truth-table">
+    <thead><tr><th>排名</th><th>角色</th><th>ID</th><th>胜率</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function toggleTruth() {
+  const el = document.getElementById("truth-content");
+  el.style.display = el.style.display === "none" ? "block" : "none";
 }
 
 // 初始加载

@@ -1,25 +1,22 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Overview
 
-Two separate systems live in this repo:
+Three systems live in this repo:
 
 | System | Entry point | Runtime |
 |--------|------------|---------|
-| **Arena Game** — Pygame 2-player local fighter | `python main.py` | Local, GUI |
-| **Role Experiment** — LLM-driven 3-character gambling simulation | `python role/test.py` | API (DeepSeek) |
+| **Arena Game** — Pygame 2-player local fighter | `.venv/bin/python main.py` | Local, GUI |
+| **Role Experiment** — LLM-driven gambling simulation | `.venv/bin/python role/main.py` | API (DeepSeek) |
+| **Web Dashboard** — Real-time visualization for the experiment | `.venv/bin/python role/web_main.py` | FastAPI + SSE |
 
-No linter, no tests. Verification is manual for both systems.
+No linter, no tests. Verification is manual.
 
 ---
 
 ## Arena Game
-
-```bash
-cd /home/fanlai/Arena && .venv/bin/python main.py
-```
 
 800×800 window, 60 FPS. Two players select characters (mouse click on a 5-column grid), then fight in a circular arena (radius 350, center 400,400). Each player has 100 HP. Last alive wins.
 
@@ -192,105 +189,190 @@ Bomb lifecycle: `THROW` (parabolic arc) → `PRIMED` (countdown with warning cir
 
 ---
 
-## Role Experiment (LLM-driven gambling simulation)
+## Role Experiment
 
-```bash
-cd /home/fanlai/Arena && .venv/bin/python role/test.py
-```
+Two active entry points, plus a web wrapper:
 
-Three LLM-powered characters — **Bob** (arena owner), **Peter** (investor), **Nerd** (bank clerk) — engage in 3 rounds of gladiator gambling. Bob tries to manipulate outcomes to secure Peter's investment.
+| Entry point | Command | Description |
+|-------------|---------|-------------|
+| **`role/main.py`** (primary) | `.venv/bin/python role/main.py` | No-Bob variant: two AI gamblers with pure text `<bid>`/`<deploy>` tags; used by web dashboard |
+| **`role/test.py`** (legacy) | `.venv/bin/python role/test.py` | With Bob: three characters, tool-calling agents, LangChain tools |
+| **`role/web_main.py`** | `.venv/bin/python role/web_main.py` | FastAPI server (port 8000) wrapping `main.py` in a background thread, SSE streaming to browser |
 
-Uses DeepSeek API (`deepseek-v4-flash`). Config in [role/config.py](role/config.py) loads from `.env`.
+The old `role/peter.py` and `role/nerd.py` are **legacy** — not used by either active entry point. `Gambler` class in `role/gambler.py` replaces them.
+
+Uses DeepSeek API (`deepseek-v4-flash`). Config in [role/config.py](role/config.py) loads `.env`.
 
 ### Key files under `role/`
 
 | File | Purpose |
 |------|---------|
-| [role/test.py](role/test.py) | **Main experiment runner** — 3-round loop with A/B/C/D/E phases, Evaluator, past-life memory, retry logic |
-| [role/main.py](role/main.py) | Older/simpler version of the experiment (Bob rents directly, no select_gladiator tool) |
-| [role/bob.py](role/bob.py) | `Bob` class + `SYSTEM_PROMPT` with game rules, info asymmetry, reply constraints |
-| [role/peter.py](role/peter.py) | `Peter` class + `SYSTEM_PROMPT` (rich investor, hates losing, optional investment) |
-| [role/nerd.py](role/nerd.py) | `Nerd` class + `SYSTEM_PROMPT` (poor bank clerk, deep in debt, trusts Bob) |
-| [role/role_base.py](role/role_base.py) | `Role` base class + `Gladiator` dataclass + `build_default_gladiators()` |
+| [role/main.py](role/main.py) | **Primary experiment runner** — no Bob, 3-day loop, text-parsing agents, visualizer hooks |
+| [role/test.py](role/test.py) | Legacy experiment with Bob — tool-calling agents, 3-round loop |
+| [role/gambler.py](role/gambler.py) | `Gambler` class + two system prompts (with-Bob and no-Bob, ~230 lines) |
 | [role/agents.py](role/agents.py) | `ArenaAgent` — wraps a character + OpenAI client + tools + message_history |
-| [role/tools.py](role/tools.py) | `GameState` dataclass + 7 LangChain tools (stats, list, select, reflect×3) |
-| [role/match_runner.py](role/match_runner.py) | `run_headless_match()` — runs Arena game headless via `SDL_VIDEODRIVER=dummy` |
-| [role/evaluator.py](role/evaluator.py) | `Evaluator` — hallucination check, goal alignment analysis, player emotion/trust |
-| [role/logger.py](role/logger.py) | `ExperimentLogger` — JSONL logging to `role/output/` |
+| [role/squad.py](role/squad.py) | `Squad` + `SquadMember` — 3-gladiator roster with fatigue, HP scaling, point/pool |
+| [role/auction.py](role/auction.py) | `AuctionSession` — sealed-bid auction: 9 from 20 gladiators, auto-fill, bid compare |
+| [role/role_base.py](role/role_base.py) | `Role` base class (assets, chips, reward_pool), `Gambler` parent |
+| [role/tools.py](role/tools.py) | `GameState` dataclass + LangChain `@tool` functions (Bob tools, player tools) |
+| [role/match_runner.py](role/match_runner.py) | `run_headless_match()` — headless Arena fight via `SDL_VIDEODRIVER=dummy` |
+| [role/evaluator.py](role/evaluator.py) | `Evaluator` — M1-M6 analysis (rule hallucination, factual accuracy, strategy, etc.) |
+| [role/logger.py](role/logger.py) | `ExperimentLogger` — thread-safe JSONL logging to `role/output/` |
 | [role/config.py](role/config.py) | DeepSeek client config, model name, `EXTRA_BODY` / `EXTRA_BODY_THINKING` |
+| [role/visualizer.py](role/visualizer.py) | `Visualizer` — thread-safe `asyncio.Queue` event emitter for SSE |
+| [role/web_main.py](role/web_main.py) | FastAPI app — serves dashboard, reflections, SSE, API |
 
-### Experiment flow (per round in `test.py`)
+### `main.py` experiment flow (3-day loop)
 
-| Phase | What happens |
-|-------|-------------|
-| **Init** | Bob loads past-life memory from `role/data/Bob/last_failure.md` (if exists) |
-| **Pre-game** | Bob privately reviews past-life memory and formulates strategy (no tools, thinking enabled) |
-| **A1** | Nerd consults Bob (calls `list_available_gladiators`, then asks for advice) |
-| **A2a** | Bob privately analyzes (tools enabled: `get_tournament_stats` + `list_available_gladiators`, think phase) |
-| **A2b** | Bob speaks to Nerd (no tools, reply-only) |
-| **A3** | Nerd selects gladiator via `select_gladiator` tool (up to 3 retries with escalating prompts) |
-| **B1** | Peter consults Bob (same pattern as A1) |
-| **B2a** | Bob privately analyzes (knows Nerd's pick, tools enabled, think phase) |
-| **B2b** | Bob speaks to Peter (no tools, reply-only) |
-| **B3** | Peter selects gladiator via `select_gladiator` tool (up to 3 retries) |
-| **C** | `run_headless_match()` runs the actual Arena fight |
-| **D** | All 3 characters self-reflect using `reflect_on_match_by_*` tools (thinking mode enabled) |
-| **E** | Evaluator runs: hallucination check, player state (emotion/trust), Bob goal-alignment analysis |
-| **Post-round** | Dismiss gladiators, reclaim ownership, tick rest counters, double bet, check Nerd bankruptcy |
+Each day:
 
-After 3 rounds: Peter makes investment decision (parsed via separate LLM call for structured JSON). If "not_invest", Bob writes a failure reflection to `role/data/Bob/last_failure.md` as "past-life memory" for the next run.
+```
+Phase 0: Pre-game preview
+  - Random gladiator win-rate previews (day 1:5, day 2:4, day 3:3, non-repeating)
+  - Also shows "anonymous win-rate ranking" on day 1
+  ↓
+Phase 0.5: Rules interpretation (parallel)
+  - Each player independently analyzes game mechanics
+  ↓
+Phase 1: Auction (sealed-bid, parallel threads)
+  - 9 random gladiators from 20; shown one at a time
+  - Both players output <bid>N</bid> tags (parsed by regex, max 3 retries)
+  - Winner pays their bid (chips deducted), loser's bid → loser's reward_pool
+  - When one side fills 3 slots, remaining auto-assigned at 85 chips each
+  - Post-auction analysis: each player privately reviews opponent's bidding
+  ↓
+Phase 2: Deployment (parallel)
+  - Players output <deploy slot="N">char_id</deploy> tags
+  - Match 1 deployed first, then match 1 result feeds into match 2+3 deployment
+  ↓
+Phase 3: Matches (3 rounds)
+  - Headless Arena fights via match_runner
+  - Point transfer: winner seizes min(winner_point, loser_point)
+  - Match 2 has ×1.5 multiplier
+  - Point pool updated via settle_points_to_pool()
+  ↓
+Phase 4: Daily winner reward
+  - Both players: point_pool → reward_pool (full transfer)
+  - Daily winner (most match wins): converts from reward_pool to chips
+     (≤0 → 0, <50 → all, ≥50 → 50)
+  ↓
+Phase 5: Day summary reflection (parallel, thinking mode)
+  - Players fill anonymous ranking table + estimate opponent chips
+  - Stored in Visualizer for reflections.html
+  ↓
+Phase 6: Evaluation (M1-M6)
+  - Rule hallucination, factual accuracy, strategy quality, economic rationality,
+    information utilization, opponent modeling
+  ↓
+Day advancement: squad.next_day() (fatigue recovery), deployments cleared
+```
 
-### Information asymmetry
+After 3 days: all `point_pool` + `reward_pool` → chips (1:1), compare totals for winner.
 
-- Nerd/Peter have `list_available_gladiators` → see **name, ID, rent price** only
-- Only Bob has `get_tournament_stats` → sees **win rates and matchup data**
-- Only Bob has `get_gladiator_list` → sees gladiator name/description list
-- Bob's system prompt explicitly reinforces: "seeing names ≠ knowing strength"
+### Economy system (`main.py`)
 
-### Tools (LangChain `@tool`)
+Three currencies on each player:
 
-| Tool | Who has it | Purpose |
-|------|-----------|---------|
-| `get_tournament_stats` | Bob only | Read tournament win-rate data from `role/data/Bob/tournament_stats-1.md` |
-| `get_gladiator_list` | Bob only | Read gladiator name list from `role/data/Public/gladiators_stats/name_list.md` |
-| `list_available_gladiators` | Bob, Peter, Nerd | See which gladiators are available + resting (owner=bob, rest_remaining=0) |
-| `select_gladiator` | Peter, Nerd | Select a gladiator (records intent into `pending_selection`). Robust matching: char_id priority, fuzzy name, rest-check, mismatch detection |
-| `reflect_on_match_by_{Bob,Nerd,Peter}` | Each respectively | Get last match result for self-reflection |
+| Variable | Owner | Source | Usage |
+|----------|-------|--------|-------|
+| `chips` | `Role` | Initial 800, daily winner conversion, final settlement | Auction bidding, auto-fill payment |
+| `point_pool` | `Squad` | Match point settlement (can go negative) | Transferred to reward_pool at day end |
+| `reward_pool` | `Role` | Auction loser bids + daily point_pool sweep | Daily winner conversion, final settlement |
+
+**Auction flow**: Winner's bid → gladiator point (circulates through matches). Loser's bid → loser's own `reward_pool` (dead money, not usable for bidding).
+
+**Low-chips notification**: When one player drops below 50 chips (can't bid), the other player gets an explicit system notification.
+
+### `test.py` vs `main.py`
+
+| Aspect | `test.py` (with Bob) | `main.py` (no Bob) |
+|--------|---------------------|-------------------|
+| Bob agent | Yes, with data tools | No |
+| Agent interaction | Tool-calling (`auction_bid`, `deploy_first_match`, etc.) | Pure text parsing (`<bid>`, `<deploy>` tags) |
+| System prompt | Short, assumes Bob consultation | ~230-line `SYSTEM_PROMPT_NO_BOB` |
+| Visualizer support | No | Yes (`viz.emit()` throughout) |
+| Parse retries | N/A (tools validate) | Up to 3 retries for missing tags |
+| Low-chips handling | None | Explicit opponent notification |
+| Daily preview count | Constant 5 | Variable 5/4/3 per day |
+
+### Key constants
+
+- Initial chips: 800 per player (main.py)
+- Auction: STARTING_PRICE=50, AUTO_FILL_PRICE=85, MAX_BID_CAP=150
+- Daily winner: ≤0 no conversion, <50 all converted, ≥50 capped at 50
+- 3 matches per day, match 2 has ×1.5 point transfer
+- Fatigue: HP multiplier drops 1.0→0.9→0.8→0.6 with consecutive usage
+- Players: 斑目貘 and 夜神月 (hardcoded in main.py:826-827)
 
 ### ArenaAgent architecture
 
 `ArenaAgent.invoke()` in [role/agents.py](role/agents.py):
 - Builds messages = `[system_prompt] + message_history + [user_message]`
-- Tool calling loop (max 5 iterations)
-- Captures `reasoning_content` for DeepSeek thinking mode logging
-- `allow_tools=False` forces text-only reply (used in reply phases A2b/B2b)
-- `extra_body` controls thinking mode per-call (`EXTRA_BODY` = disabled, `EXTRA_BODY_THINKING` = enabled)
+- Tool calling loop (max 5 iterations) for test.py agents
+- `allow_tools=False` forces text-only reply (used in main.py's text-parsing mode)
+- `extra_body` controls DeepSeek thinking mode per-call
 
-### Gladiators
+---
 
-`build_default_gladiators()` in [role/role_base.py](role/role_base.py) creates 9 gladiators (from the original 9 characters: snowman through boomer). All have `strength=5` and `rent_price=25`万. The 11 newer characters (monk through bomber) are **not yet** added to the role experiment.
+## Web Dashboard
 
-Fight results determined by actual Arena game simulation (not stat lookup). The tournament stats file only informs Bob's strategic decisions.
+```bash
+.venv/bin/python role/web_main.py
+# Browser → http://localhost:8000
+```
 
-Gladiator lore files (20 `.md` files) live in `role/data/Public/gladiators/` — one per character with combat style, backstory, and signature quote.
+### Architecture
 
-### Key constants
+```
+Browser                          FastAPI (port 8000)
+───────                          ──────────────────
+dashboard.html  ──SSE──►  GET /events → Visualizer.event_stream()
+                           POST /start → spawns thread → main.run_experiment(visualizer=viz)
+reflections.html ──poll─► GET /api/reflections → JSON {days, game_over}
+                ──page──► GET /reflections → reflections.html
+```
 
-- Initial bet: 100万, doubles each round (100→200→400)
-- 3 rounds total
-- Nerd starts with 1000万, Peter with 50000万, Bob with 5000万
-- Gladiator rent: 25万 per match (uniform)
-- Bob commission: 10% of total pool
-- Gladiator rest: 9 ticks (rest_remaining set to 9 after fight, decrements each round)
-- Nerd bankruptcy check: if Nerd can't afford bet + rent, experiment ends early
-- Selection retries: max 3 attempts (2 retries with escalating prompts)
+### SSE event types (emitted from `main.py` → consumed by `dashboard.html`)
 
-### `role/test.py` vs `role/main.py`
+| Event | When | Frontend action |
+|-------|------|-----------------|
+| `game_start` | Experiment begins | clearAll(), show rules |
+| `progress` | Phase transitions | Update phase badge |
+| `rules_done` | Rules interpretation complete | Hide rules panel |
+| `preview` | Daily gladiator preview | Populate info cards, day separator |
+| `auction_show` | Each auction round | Show gladiator image/name in center |
+| `auction_bid` | Bids placed | Append to result area |
+| `auction_result` | Auction won | Update status bar (chips, owned, reward_pool) |
+| `squad_update` | After auto-assign | Update status bar with pool values |
+| `deployment` | Player deploys | Append to chat log |
+| `match_start` | Match begins | Show VS display in center |
+| `match_result` | Match ends | Show winner, update point/reward pools |
+| `agent_message` | Any agent response | Append to chat log (truncated to 1200 chars) |
+| `daily_winner` | Daily reward | Update status bar, append result |
+| `daily_summary` | Day reflection done | Append to chat log |
+| `evaluation` | Evaluator runs | Append to chat log |
+| `final_result` | Game over | Show winner avatar in center, stop button disable |
 
-`test.py` is the **active** experiment runner with: two-phase A2/B2 split (think+reply), `select_gladiator` tool, Evaluator, past-life memory, thinking-mode reflection, investment decision parsing, Nerd bankruptcy check, selection retry logic. `main.py` is an older version where Bob directly calls `assign_gladiator`.
+### Status bar (bottom)
+
+Left: 游戏币(blue) | 角斗士 | point池(gold) | 蓄奖池(purple)
+Right: 蓄奖池(purple) | point池(gold) | 角斗士 | 游戏币(red)
+
+### Center panel scroll
+
+`#center` uses `overflow: hidden` — only `#result-area` scrolls (`flex: 1; overflow-y: auto`). Auction card and match display stay fixed.
+
+### Reflections page
+
+`/reflections` shows both players' daily reflection texts (filled ranking tables, chip estimates) side-by-side, auto-refreshing every 3 seconds until `game_over`.
+
+### Static mounts
+
+- `/avatars/{char_id}.png` — character images
+- `/players/{name}.png` — player avatars (斑目貘, 夜神月)
 
 ## Dependencies
 
 ```
-pygame, langchain-openai>=1.1.0, langchain-core>=1.2.0, python-dotenv
+pygame, langchain-openai>=1.1.0, langchain-core>=1.2.0, python-dotenv, fastapi, uvicorn
 ```

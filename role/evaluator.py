@@ -841,6 +841,82 @@ class Evaluator:
         self._log("opponent_modeling_v2", player_name, result, day)
         return result
 
+    # ═══════════════════════════════════════════════════════════════════════
+    # M7: 对手游戏币估计精确度 (程序化)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def evaluate_chip_estimation(self, day: int, player_name: str,
+                                  reflection_text: str,
+                                  actual_opponent_chips: int) -> dict:
+        """程序化检测：玩家复盘中的对手游戏币估计是否准确。
+
+        从复盘文本中提取估计范围（如"600~700"或"约 650"），
+        与真实对手游戏币（ground truth）比对，判断是否命中。
+        """
+        if not reflection_text:
+            return {"estimated_range": None, "actual_chips": actual_opponent_chips,
+                    "hit": None, "score": 0,
+                    "summary": f"{player_name} 第{day}天无复盘文本，跳过游戏币估计检测"}
+
+        # 匹配模式：对手游戏币估计：下限~上限 或 对手游戏币估计：约 NNN
+        patterns = [
+            # "对手游戏币估计：600~700" 或 "对手游戏币估计: 600~700"
+            r'对手游戏币估[算计][：:]\s*[约大约]?\s*(\d+)\s*[~\-–—至到]\s*(\d+)',
+            # "约 600~700 游戏币"
+            r'[约大约]?\s*(\d+)\s*[~\-–—至到]\s*(\d+)\s*游戏币',
+            # "估计对手.*?(\d+)\s*[~\-–—至到]\s*(\d+)"
+            r'估计对手.*?(\d+)\s*[~\-–—至到]\s*(\d+)',
+            # "对手大概还有 600 左右"
+            r'对手[大大概还][约概还有]*\s*(\d+)\s*[左以右内]',
+            # "对手.*?(\d+).*?游戏币" (single number)
+            r'对手.*?[约大约]?\s*(\d+)\s*游戏币[^\+]',
+        ]
+
+        estimated_low = None
+        estimated_high = None
+
+        for pattern in patterns:
+            m = re.search(pattern, reflection_text)
+            if m:
+                groups = m.groups()
+                if len(groups) == 2:
+                    estimated_low = int(groups[0])
+                    estimated_high = int(groups[1])
+                elif len(groups) == 1:
+                    # Single number → treat as ±25 range
+                    mid = int(groups[0])
+                    estimated_low = max(0, mid - 25)
+                    estimated_high = mid + 25
+                break
+
+        if estimated_low is None:
+            return {"estimated_range": None, "actual_chips": actual_opponent_chips,
+                    "hit": False, "score": 0,
+                    "summary": f"{player_name} 第{day}天未在复盘中发现对手游戏币估计"}
+
+        # 确保 low <= high
+        if estimated_low > estimated_high:
+            estimated_low, estimated_high = estimated_high, estimated_low
+
+        hit = estimated_low <= actual_opponent_chips <= estimated_high
+        score = 10 if hit else (6 if abs(actual_opponent_chips - estimated_low) <= 30 or
+                                 abs(actual_opponent_chips - estimated_high) <= 30 else 2)
+
+        summary = (
+            f"{player_name} 估计对手游戏币 {estimated_low}~{estimated_high}，"
+            f"真实值 {actual_opponent_chips} → {'✅ 命中' if hit else '❌ 偏离'}"
+        )
+
+        result = {
+            "estimated_range": f"{estimated_low}~{estimated_high}",
+            "actual_chips": actual_opponent_chips,
+            "hit": hit,
+            "score": score,
+            "summary": summary,
+        }
+        self._log("chip_estimation", player_name, result, day)
+        return result
+
     # ── 辅助：加载 ground truth 数据 ─────────────────────────────────────
 
     def load_ground_truth(self) -> dict:

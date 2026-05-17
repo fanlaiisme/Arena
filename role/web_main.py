@@ -128,6 +128,7 @@ async def api_reflections():
         return JSONResponse({"days": {}, "game_over": False})
     return JSONResponse({
         "days": _viz.get_reflections(),
+        "ranking_truth": _viz._ranking_truth,
         "game_over": _viz._game_over,
     })
 

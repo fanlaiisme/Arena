@@ -20,17 +20,22 @@ class Visualizer:
     def __init__(self):
         self._queue: asyncio.Queue = asyncio.Queue()
         self._start_time = time.time()
-        self._reflections: dict[int, dict] = {}  # {day: {"a": text, "b": text}}
+        self._reflections: dict[int, dict] = {}  # {day: {player_name: {"text": ..., "opponent_chips": N}}}
+        self._ranking_truth: list[dict] = []  # [{rank, name, char_id, win_rate}, ...]
         self._game_over = False
 
     def mark_game_over(self):
         self._game_over = True
 
-    def store_reflection(self, day: int, player_key: str, text: str):
+    def set_ranking_truth(self, data: list[dict]):
+        """设置完整胜率排名 ground truth。"""
+        self._ranking_truth = data
+
+    def store_reflection(self, day: int, player_key: str, text: str, opponent_chips: int | None = None):
         """存储每日复盘文本（线程安全）。"""
         if day not in self._reflections:
             self._reflections[day] = {}
-        self._reflections[day][player_key] = text
+        self._reflections[day][player_key] = {"text": text, "opponent_chips": opponent_chips}
 
     def get_reflections(self) -> dict:
         """获取所有已存储的复盘数据。"""
