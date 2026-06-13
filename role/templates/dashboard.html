@@ -172,7 +172,8 @@
   <!-- 玩家 A -->
   <div class="player-panel a">
     <div class="panel-title a">
-      <img class="player-avatar" src="/players/斑目貘.png" alt="" />
+      <img class="player-avatar" src="/players/斑目貘.png" alt="斑目貘"
+           onerror="this.style.display='none'" />
       <span id="title-a">玩家A</span>
     </div>
     <div class="info-header">📊 情报预览 (<span id="count-a">0</span>名)</div>
@@ -209,7 +210,8 @@
   <!-- 玩家 B -->
   <div class="player-panel b">
     <div class="panel-title b">
-      <img class="player-avatar" src="/players/夜神月.png" alt="" />
+      <img class="player-avatar" src="/players/夜神月.png" alt="夜神月"
+           onerror="this.style.display='none'" />
       <span id="title-b">玩家B</span>
     </div>
     <div class="info-header">📊 情报预览 (<span id="count-b">0</span>名)</div>
@@ -247,6 +249,17 @@ evtSource.onerror = function(e) {
 };
 
 function handle(type, d) {
+  // 自动检测玩家名：如果 game_start 未被接收，从事件中推断
+  if (d.player) {
+    if (playerAName === "玩家A" && d.player !== "玩家B" && d.player !== playerBName) {
+      playerAName = d.player;
+      document.getElementById("title-a").textContent = d.player;
+    } else if (playerBName === "玩家B" && d.player !== playerAName) {
+      playerBName = d.player;
+      document.getElementById("title-b").textContent = d.player;
+    }
+  }
+
   switch(type) {
     case "game_start":
       setNames(d.player_a, d.player_b);

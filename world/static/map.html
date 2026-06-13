@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>虚拟世界地图</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  background: #0A1628; color: #e0d5c1;
+  display: flex; height: 100vh; overflow: hidden;
+}
+#left-panel { width: 220px; background: #0D1F35; padding: 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+#left-panel h2 { font-size: 16px; color: #c9a96e; border-bottom: 1px solid #1A3450; padding-bottom: 8px; }
+.agent-card {
+  background: #122840; border-radius: 6px; padding: 8px 10px;
+  border-left: 3px solid #c9a96e; font-size: 11px;
+  transition: border-color 0.3s;
+}
+.agent-card .name { font-size: 13px; font-weight: bold; color: #e8d5b0; }
+.agent-card .loc { color: #7eb8da; margin-top: 2px; }
+.agent-card .busy { color: #e8a840; font-size: 10px; }
+.agent-card .stats { display: flex; gap: 6px; margin-top: 3px; color: #8a9bb5; }
+.bar-wrap { height: 4px; background: #1A3450; border-radius: 2px; margin-top: 2px; }
+.bar-inner { height: 100%; border-radius: 2px; transition: width 0.5s; }
+.bar-hunger { background: #e8a840; }
+.bar-energy { background: #4da6e8; }
+
+#main-area { flex: 1; display: flex; flex-direction: column; }
+#top-bar {
+  padding: 10px 20px; background: #0D1F35;
+  display: flex; justify-content: space-between; align-items: center;
+  border-bottom: 1px solid #1A3450;
+}
+#top-bar .time { font-size: 18px; font-weight: bold; color: #c9a96e; }
+#top-bar .phase { font-size: 14px; color: #8a9bb5; }
+button {
+  background: #c9a96e; color: #0A1628; border: none;
+  padding: 8px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; margin-left: 6px;
+}
+button:hover { background: #d4b87a; }
+button:disabled { background: #555; cursor: not-allowed; }
+#canvas-wrap { flex: 1; position: relative; }
+canvas { display: block; }
+
+#log-panel {
+  width: 260px; background: #0D1F35; padding: 12px; display: flex; flex-direction: column; font-size: 12px;
+}
+#log-panel h3 { color: #c9a96e; font-size: 14px; margin-bottom: 8px; }
+#log-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.log-entry { padding: 4px 8px; background: #122840; border-radius: 3px; color: #8a9bb5; }
+.log-entry.important { color: #e8d5b0; border-left: 2px solid #c9a96e; padding-left: 6px; }
+</style>
+</head>
+<body>
+
+<div id="left-panel">
+  <h2>智能体</h2>
+  <div id="agent-list"></div>
+</div>
+
+<div id="main-area">
+  <div id="top-bar">
+    <div>
+      <span class="time" id="time-display">等待启动...</span>
+      <span class="phase" id="phase-display"></span>
+    </div>
+    <div>
+      <button id="btn-start" onclick="startSim()">▶ 启动模拟</button>
+      <button id="btn-stop" onclick="stopSim()" disabled>⏹ 停止</button>
+    </div>
+  </div>
+  <div id="canvas-wrap">
+    <canvas id="map"></canvas>
+  </div>
+</div>
+
+<div id="log-panel">
+  <h3>事件日志</h3>
+  <div id="log-list"></div>
+</div>
+
+<script>
+// ===== 时段背景色 =====
+const PHASE_BG = [
+  "#0A1628",  // 0 深夜 — 深蓝黑
+  "#2A3A4A",  // 1 上午 — 清爽蓝灰
+  "#3A5A40",  // 2 下午 — 暖绿
+  "#3A2518",  // 3 傍晚 — 暖棕橙
+];
+const PHASE_GRID = [
+  "#0E1E32",  // 深夜
+  "#2E4052",  // 上午
+  "#406648",  // 下午
+  "#402A1C",  // 傍晚
+];
+
+// ===== 建筑数据 =====
+// type: "house" | "barn" | "bank" | "tavern" | "arena"
+const BUILDINGS = [
+  { id: "居民区", x: 100, y: 70,  w: 150, h: 100, color: "#A08060", roof: "#8B6E4E", type: "house",  label: "居民区" },
+  { id: "农场",   x: 700, y: 70,  w: 160, h: 100, color: "#7BA028", roof: "#5C7A1E", type: "barn",   label: "农场" },
+  { id: "银行",   x: 80,  y: 400, w: 170, h: 105, color: "#D4A017", roof: "#B08814", type: "bank",   label: "银行" },
+  { id: "酒馆",   x: 430, y: 370, w: 160, h: 100, color: "#E89640", roof: "#C07830", type: "tavern", label: "酒馆" },
+  { id: "Bob竞技场", x: 400, y: 530, w: 200, h: 110, color: "#C04040", roof: "#901818", type: "arena", label: "Bob竞技场" },
+];
+
+const AGENT_COLORS = ["#5db8fe", "#f0b840", "#f06850", "#58d868"];
+
+const ROADS = [
+  ["居民区", "农场"], ["居民区", "银行"], ["居民区", "酒馆"],
+  ["农场", "酒馆"], ["银行", "酒馆"], ["酒馆", "Bob竞技场"], ["银行", "Bob竞技场"],
+];
+
+function bCx(b) { return b.x + b.w / 2; }
+function bCy(b) { return b.y + b.h / 2; }
+function bCenter(b) { return { cx: bCx(b), cy: bCy(b) }; }
+
+// ===== Canvas =====
+const canvas = document.getElementById('map');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  const wrap = document.getElementById('canvas-wrap');
+  canvas.width = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+let worldState = null;
+let currentPhase = 0;
+
+// ===== 绘制主循环 =====
+
+function draw() {
+  const W = canvas.width, H = canvas.height;
+
+  if (worldState && worldState.phase_id !== undefined) {
+    currentPhase = worldState.phase_id;
+  }
+
+  const bg = PHASE_BG[currentPhase] || PHASE_BG[0];
+  const grid = PHASE_GRID[currentPhase] || PHASE_GRID[0];
+
+  // 背景
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // 地面纹理
+  ctx.fillStyle = grid;
+  for (let i = 0; i < W; i += 50)
+    for (let j = 0; j < H; j += 50)
+      if ((i + j) % 100 === 0) ctx.fillRect(i, j, 50, 50);
+
+  // 道路
+  drawRoads();
+
+  // 树和装饰（在建筑背后）
+  drawTrees();
+
+  // 建筑
+  for (const b of BUILDINGS) drawBuilding(b);
+
+  // 智能体
+  if (worldState && worldState.agents) drawAllAgents();
+
+  requestAnimationFrame(draw);
+}
+
+// ===== 道路 =====
+
+function drawRoads() {
+  for (const [aId, bId] of ROADS) {
+    const a = BUILDINGS.find(b => b.id === aId);
+    const b = BUILDINGS.find(b => b.id === bId);
+    if (!a || !b) continue;
+    const ac = bCenter(a), bc = bCenter(b);
+    drawRoad(ac.cx, ac.cy, bc.cx, bc.cy);
+  }
+}
+
+function drawRoad(x1, y1, x2, y2) {
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.lineWidth = 28;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+
+  ctx.strokeStyle = '#8B7355';
+  ctx.lineWidth = 20;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+
+  ctx.strokeStyle = '#C8B898';
+  ctx.lineWidth = 3;
+  ctx.setLineDash([8, 20]);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// ===== 树 =====
+
+const TREE_SPOTS = [
+  [210,180],[280,140],[550,160],[820,200],
+  [70,320],[30,280],[350,290],[600,300],[760,290],
+  [300,500],[200,520],[620,480],[700,520],
+];
+
+function drawTrees() {
+  for (const [tx, ty] of TREE_SPOTS) {
+    // 树干
+    ctx.fillStyle = '#5A3A2A';
+    ctx.fillRect(tx - 3, ty, 6, 16);
+    // 树冠
+    ctx.fillStyle = '#3A6030';
+    ctx.beginPath(); ctx.arc(tx, ty - 2, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4A8040';
+    ctx.beginPath(); ctx.arc(tx + 2, ty - 4, 8, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+// ===== 建筑绘制（真实形状） =====
+
+function drawBuilding(b) {
+  switch (b.type) {
+    case "house":  drawHouse(b); break;
+    case "barn":   drawBarn(b); break;
+    case "bank":   drawBank(b); break;
+    case "tavern": drawTavern(b); break;
+    case "arena":  drawArena(b); break;
+  }
+}
+
+// --- 居民区：尖顶小屋 ---
+
+function drawHouse(b) {
+  const { x, y, w, h, color, roof: roofColor } = b;
+
+  // 阴影
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillRect(x + 5, y + 5, w, h);
+
+  // 主体
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, h);
+
+  // 尖顶
+  ctx.fillStyle = roofColor;
+  ctx.beginPath();
+  ctx.moveTo(x - 8, y + 2);
+  ctx.lineTo(x + w / 2, y - 35);
+  ctx.lineTo(x + w + 8, y + 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // 烟囱
+  ctx.fillStyle = '#6A5040';
+  ctx.fillRect(x + w * 0.65, y - 28, 14, 28);
+
+  // 窗户 (2个)
+  for (let wx of [x + 18, x + w - 48]) {
+    ctx.fillStyle = '#FFF8DC';
+    ctx.fillRect(wx, y + 18, 26, 26);
+    ctx.strokeStyle = '#5A4A3A';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(wx, y + 18, 26, 26);
+    // 十字窗框
+    ctx.beginPath();
+    ctx.moveTo(wx + 13, y + 18); ctx.lineTo(wx + 13, y + 44);
+    ctx.moveTo(wx, y + 31); ctx.lineTo(wx + 26, y + 31);
+    ctx.stroke();
+  }
+
+  // 门
+  ctx.fillStyle = '#5A3A2A';
+  ctx.fillRect(x + w / 2 - 12, y + h - 36, 24, 36);
+  ctx.fillStyle = '#D4A017';
+  ctx.beginPath(); ctx.arc(x + w / 2 + 6, y + h - 22, 3, 0, Math.PI * 2); ctx.fill();
+
+  // 外框
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+
+  // 标签
+  drawLabel(b);
+}
+
+// --- 农场：谷仓 + 筒仓 ---
+
+function drawBarn(b) {
+  const { x, y, w, h, color, roof: roofColor } = b;
+
+  // 阴影
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillRect(x + 5, y + 5, w, h);
+
+  // 主体
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, h);
+
+  // 谷仓高顶
+  ctx.fillStyle = roofColor;
+  ctx.beginPath();
+  ctx.moveTo(x - 6, y + 2);
+  ctx.lineTo(x + w / 2, y - 40);
+  ctx.lineTo(x + w + 6, y + 2);
+  ctx.closePath();
+  ctx.fill();
+
+  // 筒仓 (旁边圆柱)
+  const sx = x + w + 8;
+  ctx.fillStyle = '#A0A0A0';
+  ctx.fillRect(sx, y + 20, 22, h - 20);
+  ctx.fillStyle = '#909090';
+  ctx.beginPath(); ctx.arc(sx + 11, y + 16, 12, Math.PI, 0); ctx.fill();
+
+  // 大门
+  ctx.fillStyle = '#4A3020';
+  ctx.fillRect(x + w / 2 - 22, y + h - 45, 44, 45);
+  ctx.strokeStyle = '#3A2010';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + w / 2 - 22, y + h - 45, 44, 45);
+  // 门缝
+  ctx.beginPath();
+  ctx.moveTo(x + w / 2, y + h - 45); ctx.lineTo(x + w / 2, y + h);
+  ctx.stroke();
+
+  // 窗户
+  ctx.fillStyle = '#FFF8DC';
+  ctx.fillRect(x + 12, y + h / 2 - 8, 22, 22);
+  ctx.strokeStyle = '#5A4A3A';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 12, y + h / 2 - 8, 22, 22);
+
+  // 外框
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+
+  drawLabel(b);
+}
+
+// --- 银行：古典柱式建筑 ---
+
+function drawBank(b) {
+  const { x, y, w, h, color, roof: roofColor } = b;
+
+  // 阴影
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillRect(x + 5, y + 5, w, h);
+
+  // 主体
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, h);
+
+  // 三角山墙
+  ctx.fillStyle = roofColor;
+  ctx.beginPath();
+  ctx.moveTo(x - 10, y + 2);
+  ctx.lineTo(x + w / 2, y - 45);
+  ctx.lineTo(x + w + 10, y + 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // 山墙圆窗
+  ctx.fillStyle = '#FFF8DC';
+  ctx.beginPath(); ctx.arc(x + w / 2, y - 15, 10, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#5A4A3A';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // 四根柱子
+  for (let i = 0; i < 4; i++) {
+    const cx = x + 25 + i * (w - 30) / 3;
+    ctx.fillStyle = '#E8D8C0';
+    ctx.fillRect(cx - 5, y + 5, 10, h - 5);
+    ctx.strokeStyle = '#C0A880';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(cx - 5, y + 5, 10, h - 5);
+  }
+
+  // 大门
+  ctx.fillStyle = '#4A3020';
+  ctx.fillRect(x + w / 2 - 16, y + h / 2 + 5, 32, h / 2 - 5);
+  ctx.fillStyle = '#D4A017';
+  ctx.beginPath(); ctx.arc(x + w / 2 + 8, y + h * 0.65, 3, 0, Math.PI * 2); ctx.fill();
+
+  // 外框
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+
+  drawLabel(b);
+}
+
+// --- 酒馆：带招牌的建筑 ---
+
+function drawTavern(b) {
+  const { x, y, w, h, color, roof: roofColor } = b;
+
+  // 阴影
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillRect(x + 5, y + 5, w, h);
+
+  // 主体
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, h);
+
+  // 屋顶
+  ctx.fillStyle = roofColor;
+  ctx.beginPath();
+  ctx.moveTo(x - 6, y + 2);
+  ctx.lineTo(x + w / 2, y - 32);
+  ctx.lineTo(x + w + 6, y + 2);
+  ctx.closePath();
+  ctx.fill();
+
+  // 招牌杆
+  const sx = x + w - 18;
+  ctx.fillStyle = '#5A3A2A';
+  ctx.fillRect(sx - 2, y - 24, 4, 30);
+
+  // 招牌
+  ctx.fillStyle = '#D4A017';
+  ctx.fillRect(sx - 22, y - 24, 44, 18);
+  ctx.strokeStyle = '#8B6914';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(sx - 22, y - 24, 44, 18);
+  ctx.fillStyle = '#3A2010';
+  ctx.font = 'bold 10px "Microsoft YaHei","PingFang SC",sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('酒', sx, y - 9);
+  ctx.textAlign = 'start';
+
+  // 大窗户
+  ctx.fillStyle = '#FFF8DC';
+  ctx.fillRect(x + 12, y + 15, 40, 32);
+  ctx.strokeStyle = '#5A4A3A';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 12, y + 15, 40, 32);
+
+  // 门
+  ctx.fillStyle = '#4A3020';
+  ctx.fillRect(x + w - 50, y + h - 36, 24, 36);
+
+  // 外框
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+
+  drawLabel(b);
+}
+
+// --- 竞技场：椭圆形角斗场 ---
+
+function drawArena(b) {
+  const { x, y, w, h, color, roof: roofColor } = b;
+
+  // 阴影
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2 + 5, y + h / 2 + 5, w / 2, h / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 椭圆主体
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 内圈（竞技场内部）
+  ctx.fillStyle = '#D4A860';
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2, y + h / 2, w / 2 - 18, h / 2 - 18, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 内圈纹理（同心弧线）
+  ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+  ctx.lineWidth = 1;
+  for (let r = 0.3; r <= 1; r += 0.25) {
+    ctx.beginPath();
+    ctx.ellipse(x + w / 2, y + h / 2, (w / 2 - 18) * r, (h / 2 - 18) * r, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // 外圈拱门装饰
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2, y + h / 2, w / 2 - 2, h / 2 - 2, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 入口拱门 (底部)
+  ctx.fillStyle = roofColor;
+  ctx.fillRect(x + w / 2 - 20, y + h - 25, 40, 28);
+  ctx.fillStyle = '#3A1010';
+  ctx.fillRect(x + w / 2 - 14, y + h - 20, 28, 23);
+
+  drawLabel(b);
+}
+
+// --- 标签 ---
+
+function drawLabel(b) {
+  const cx = bCx(b), by = b.y + b.h + 16;
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 12px "Microsoft YaHei","PingFang SC",sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(b.label, cx, by + 4);
+  ctx.textAlign = 'start';
+}
+
+// ===== 智能体绘制 =====
+
+function drawAllAgents() {
+  for (let i = 0; i < worldState.agents.length; i++) {
+    const a = worldState.agents[i];
+    const color = AGENT_COLORS[i % AGENT_COLORS.length];
+
+    if (a.travelling) {
+      const fromB = BUILDINGS.find(b => b.id === a.travel_from);
+      const toB = BUILDINGS.find(b => b.id === a.travel_to);
+      if (fromB && toB) {
+        const fc = bCenter(fromB), tc = bCenter(toB);
+        const p = a.travel_progress || 0;
+        drawAgentAt(fc.cx + (tc.cx - fc.cx) * p, fc.cy + (tc.cy - fc.cy) * p, a, color, i, true);
+      }
+    } else if (a.location) {
+      const b = BUILDINGS.find(b => b.id === a.location);
+      if (b) {
+        const atLoc = worldState.agents.filter(a2 => a2.location === a.location);
+        const idx = atLoc.indexOf(a);
+        const angle = (idx / Math.max(atLoc.length, 1)) * Math.PI * 2 + 0.5;
+        const dist = 60;
+        drawAgentAt(bCx(b) + Math.cos(angle) * dist, bCy(b) + Math.sin(angle) * dist, a, color, i, false);
+      }
+    }
+  }
+}
+
+function drawAgentAt(cx, cy, agent, color, idx, onRoad) {
+  const pulse = (agent.sleeping || agent.work_ticks > 0) ? 0 : Math.sin(Date.now() * 0.004 + idx) * 3;
+
+  // 光晕
+  ctx.fillStyle = color + '44';
+  ctx.beginPath(); ctx.arc(cx, cy, 12 + pulse, 0, Math.PI * 2); ctx.fill();
+
+  // 主体
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // 状态标记
+  if (agent.sleeping) drawEmoji('💤', cx + 10, cy - 14);
+  else if (agent.eating) drawEmoji('🍽️', cx + 10, cy - 14);
+  else if (agent.travelling) drawEmoji('🚶', cx + 10, cy - 14);
+
+  // 名字
+  ctx.fillStyle = '#e0d5c1';
+  ctx.font = '10px "Microsoft YaHei","PingFang SC",sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(agent.name, cx, cy + 18);
+  ctx.textAlign = 'start';
+}
+
+function drawEmoji(emoji, x, y) {
+  ctx.font = '13px serif';
+  ctx.fillText(emoji, x, y);
+}
+
+// ===== SSE =====
+
+let evtSource = null;
+function startSSE() {
+  if (evtSource) evtSource.close();
+  evtSource = new EventSource('/events');
+  evtSource.onmessage = (e) => { try { handleEvent(JSON.parse(e.data)); } catch(_){} };
+  evtSource.onerror = () => {};
+}
+startSSE();
+
+function handleEvent(msg) {
+  const { type, data } = msg;
+  switch (type) {
+    case 'world_state':
+      worldState = data;
+      updateUI(data);
+      break;
+    case 'agent_move':
+      addLog(`${data.agent}: ${data.from} → ${data.to}`, true);
+      break;
+    case 'agent_state':
+      addLog(`${data.agent} ${data.state === 'sleeping' ? '开始睡觉' : '开始吃饭'}`);
+      break;
+    case 'log':
+      addLog(data.msg);
+      break;
+    case 'game_over':
+      addLog('=== ' + data.msg + ' ===', true);
+      document.getElementById('btn-start').disabled = false;
+      document.getElementById('btn-stop').disabled = true;
+      break;
+  }
+}
+
+function updateUI(state) {
+  document.getElementById('time-display').textContent =
+    `第 ${state.day} 天 · ${state.phase}`;
+  document.getElementById('phase-display').textContent =
+    `tick ${state.tick_in_day}/99`;
+
+  const list = document.getElementById('agent-list');
+  list.innerHTML = (state.agents || []).map((a, i) => {
+    const color = AGENT_COLORS[i % AGENT_COLORS.length];
+    let locText, busyText = '';
+    if (a.travelling) {
+      locText = `🚶 ${a.travel_from} → ${a.travel_to}`;
+      busyText = `路上 ${Math.round(a.travel_progress * 100)}%`;
+    } else if (a.location) {
+      locText = `📍 ${a.location}`;
+      if (a.sleeping) busyText = '💤 睡觉中';
+      else if (a.eating) busyText = '🍽️ 吃饭中';
+      else if (a.work_ticks > 0) busyText = '🔨 ' + a.busy_reason;
+    } else {
+      locText = '❓ 未知';
+    }
+    return `<div class="agent-card" style="border-left-color:${color}">
+      <div class="name">${a.gender === '女' ? '♀' : '♂'} ${a.name}</div>
+      <div class="loc">${locText}</div>
+      ${busyText ? `<div class="busy">${busyText}</div>` : ''}
+      <div class="stats"><span>💰${a.cash}</span><span>🍞${a.food}</span></div>
+      <div style="font-size:9px;color:#8a9bb5;margin-top:2px;">
+        饱腹<div class="bar-wrap"><div class="bar-inner bar-hunger" style="width:${a.hunger}%"></div></div>
+        精力<div class="bar-wrap"><div class="bar-inner bar-energy" style="width:${a.energy}%"></div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function addLog(msg, important) {
+  const list = document.getElementById('log-list');
+  const el = document.createElement('div');
+  el.className = 'log-entry' + (important ? ' important' : '');
+  el.textContent = msg;
+  list.prepend(el);
+  if (list.children.length > 50) list.lastChild.remove();
+}
+
+async function startSim() {
+  document.getElementById('btn-start').disabled = true;
+  document.getElementById('btn-stop').disabled = false;
+  document.getElementById('log-list').innerHTML = '';
+  addLog('启动模拟...', true);
+  await fetch('/start', { method: 'POST' });
+}
+
+async function stopSim() {
+  document.getElementById('btn-stop').disabled = true;
+  addLog('停止模拟...', true);
+  await fetch('/stop', { method: 'POST' });
+  document.getElementById('btn-start').disabled = false;
+}
+
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

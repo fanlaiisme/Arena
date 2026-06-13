@@ -23,6 +23,10 @@ class Visualizer:
         self._reflections: dict[int, dict] = {}  # {day: {player_name: {"text": ..., "opponent_chips": N}}}
         self._ranking_truth: list[dict] = []  # [{rank, name, char_id, win_rate}, ...]
         self._game_over = False
+        self._player_a_name: str | None = None  # 缓存用于新 SSE 连接重发
+        self._player_b_name: str | None = None
+        self._rules_summary: str | None = None
+        self._game_started = False
 
     def mark_game_over(self):
         self._game_over = True
@@ -46,9 +50,16 @@ class Visualizer:
 
         可从任意线程调用（如后台游戏线程）。
         """
+        d = data or {}
+        # 缓存 game_start 信息，用于新 SSE 连接重发
+        if event_type == "game_start":
+            self._player_a_name = d.get("player_a")
+            self._player_b_name = d.get("player_b")
+            self._rules_summary = d.get("rules_summary")
+            self._game_started = True
         payload = json.dumps({
             "type": event_type,
-            "data": data or {},
+            "data": d,
             "ts": round(time.time() - self._start_time, 2),
         }, ensure_ascii=False)
         # asyncio.Queue.put_nowait 是线程安全的
@@ -64,6 +75,20 @@ class Visualizer:
             async for sse_msg in viz.event_stream():
                 yield sse_msg
         """
+        # 立即发送连接确认，确保浏览器知道 SSE 已就绪
+        yield ": connected\n\n"
+        # 如果游戏已启动，补发 game_start 事件（处理页面刷新场景）
+        if self._game_started and self._player_a_name and self._player_b_name:
+            catchup = json.dumps({
+                "type": "game_start",
+                "data": {
+                    "player_a": self._player_a_name,
+                    "player_b": self._player_b_name,
+                    "rules_summary": self._rules_summary or "",
+                },
+                "ts": round(time.time() - self._start_time, 2),
+            }, ensure_ascii=False)
+            yield f"data: {catchup}\n\n"
         while True:
             payload = await self._queue.get()
             yield f"data: {payload}\n\n"
