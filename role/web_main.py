@@ -162,6 +162,16 @@ async def shutdown():
     return {"status": "shutting_down"}
 
 
+@app.api_route("/reset", methods=["GET", "POST"])
+async def reset_game():
+    """重置游戏状态，允许重新开始（无需重启服务器）。"""
+    global _viz, _game_thread, _human_sync
+    _game_thread = None
+    _human_sync = None
+    _viz = Visualizer()
+    return {"status": "ok", "msg": "游戏状态已重置，可以重新开始"}
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}

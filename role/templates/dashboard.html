@@ -165,6 +165,7 @@
   <span style="font-size:13px;color:var(--dim)" id="day-label"></span>
   <button id="btn-start" onclick="startGame()">▶ 开始游戏</button>
   <button class="btn-reflections" onclick="window.open('/reflections','_blank')">📊 每日复盘</button>
+  <a href="/" onclick="fetch('/reset',{method:'POST'}).then(()=>location.href='/'); return false" style="font-size:12px;color:var(--dim);text-decoration:none;padding:4px 10px;border:1px solid #475569;border-radius:6px">🏠 返回首页</a>
 </div>
 
 <!-- 主区域 -->
