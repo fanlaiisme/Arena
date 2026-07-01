@@ -5,3 +5,4 @@ python-dotenv>=1.0.0
 fastapi>=0.100.0
 uvicorn>=0.30.0
 websockets>=16.0
+python-multipart>=0.0.20
