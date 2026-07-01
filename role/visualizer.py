@@ -27,6 +27,10 @@ class Visualizer:
         self._player_b_name: str | None = None
         self._rules_summary: str | None = None
         self._game_started = False
+        self._game_start_data: dict | None = None  # 完整 game_start 数据用于 catch-up
+        # 人机对战 catch-up：记录当前等待事件，页面刷新时重发
+        self._pending_wait_event: str | None = None
+        self._pending_wait_data: dict | None = None
 
     def mark_game_over(self):
         self._game_over = True
@@ -57,6 +61,13 @@ class Visualizer:
             self._player_b_name = d.get("player_b")
             self._rules_summary = d.get("rules_summary")
             self._game_started = True
+            self._game_start_data = dict(d)
+
+        # 记录需要等待人类输入的事件，用于页面刷新恢复
+        if event_type in ("awaiting_bid", "awaiting_deploy", "awaiting_confirm", "awaiting_summary"):
+            self._pending_wait_event = event_type
+            self._pending_wait_data = dict(d)
+
         payload = json.dumps({
             "type": event_type,
             "data": d,
@@ -66,7 +77,15 @@ class Visualizer:
         try:
             self._queue.put_nowait(payload)
         except asyncio.QueueFull:
-            pass  # 丢弃旧事件，避免阻塞游戏线程
+            print(f"  ⚠ [Visualizer] 队列已满，丢弃事件: {event_type}")
+        else:
+            if event_type.startswith("awaiting_"):
+                print(f"  ✓ [Visualizer] 已发射 {event_type}: {json.dumps(d, ensure_ascii=False)[:120]}")
+
+    def clear_pending_wait(self):
+        """清除等待输入状态（人类已提交输入后调用）。"""
+        self._pending_wait_event = None
+        self._pending_wait_data = None
 
     async def event_stream(self):
         """异步生成器，逐条产出 SSE 格式的事件字符串。
@@ -78,14 +97,18 @@ class Visualizer:
         # 立即发送连接确认，确保浏览器知道 SSE 已就绪
         yield ": connected\n\n"
         # 如果游戏已启动，补发 game_start 事件（处理页面刷新场景）
-        if self._game_started and self._player_a_name and self._player_b_name:
+        if self._game_started and self._game_start_data:
             catchup = json.dumps({
                 "type": "game_start",
-                "data": {
-                    "player_a": self._player_a_name,
-                    "player_b": self._player_b_name,
-                    "rules_summary": self._rules_summary or "",
-                },
+                "data": self._game_start_data,
+                "ts": round(time.time() - self._start_time, 2),
+            }, ensure_ascii=False)
+            yield f"data: {catchup}\n\n"
+        # 如果当前正等待人类输入，补发等待事件（页面刷新恢复）
+        if self._pending_wait_event and self._pending_wait_data:
+            catchup = json.dumps({
+                "type": self._pending_wait_event,
+                "data": self._pending_wait_data,
                 "ts": round(time.time() - self._start_time, 2),
             }, ensure_ascii=False)
             yield f"data: {catchup}\n\n"

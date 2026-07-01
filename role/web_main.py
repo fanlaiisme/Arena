@@ -5,8 +5,13 @@
     浏览器打开 http://localhost:8000
 """
 
-import sys
 import os
+
+# 必须在任何导入 pygame 的模块之前设置，避免在服务器环境中尝试打开图形窗口
+os.environ['SDL_VIDEODRIVER'] = 'dummy'
+
+import sys
+import json
 import asyncio
 import threading
 from pathlib import Path
@@ -15,12 +20,13 @@ _PARENT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PARENT not in sys.path:
     sys.path.insert(0, _PARENT)
 
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, Form, BackgroundTasks
 from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from role.visualizer import Visualizer
 from role.main import run_experiment as _run_experiment
+from role.human_sync import HumanInputState
 
 app = FastAPI(title="Arena 可视化仪表盘")
 
@@ -37,16 +43,43 @@ if _PLAYERS_DIR.exists():
 # 全局单例
 _viz: Visualizer | None = None
 _game_thread: threading.Thread | None = None
+_human_sync: HumanInputState | None = None
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 页面路由
+# ═══════════════════════════════════════════════════════════════════════════
 
 @app.get("/", response_class=HTMLResponse)
+async def landing():
+    """入口页面 —— 观战模式 vs 人机对战。"""
+    html_path = _TEMPLATE_DIR / "landing.html"
+    if html_path.exists():
+        return html_path.read_text(encoding="utf-8")
+    return HTMLResponse("<h1>landing.html not found</h1>", status_code=404)
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard():
-    """返回仪表盘 HTML 页面。"""
+    """观战模式仪表盘（原 AI vs AI 只读面板）。"""
     html_path = _TEMPLATE_DIR / "dashboard.html"
     if html_path.exists():
         return html_path.read_text(encoding="utf-8")
     return HTMLResponse("<h1>dashboard.html not found</h1>", status_code=404)
 
+
+@app.get("/play", response_class=HTMLResponse)
+async def play_page():
+    """人机对战页面。"""
+    html_path = _TEMPLATE_DIR / "play.html"
+    if html_path.exists():
+        return html_path.read_text(encoding="utf-8")
+    return HTMLResponse("<h1>play.html not found</h1>", status_code=404)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SSE 端点
+# ═══════════════════════════════════════════════════════════════════════════
 
 @app.get("/events")
 async def events():
@@ -71,10 +104,18 @@ async def events():
     )
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# 游戏控制
+# ═══════════════════════════════════════════════════════════════════════════
+
 @app.post("/start")
-async def start_game(background_tasks: BackgroundTasks):
-    """启动游戏后台线程。"""
-    global _viz, _game_thread
+async def start_game(mode: str = "aivai"):
+    """启动游戏后台线程。
+
+    Args:
+        mode: "aivai" = AI vs AI 观战, "play" = 人机对战
+    """
+    global _viz, _game_thread, _human_sync
 
     if _game_thread and _game_thread.is_alive():
         return {"status": "error", "msg": "游戏已在运行中"}
@@ -84,13 +125,28 @@ async def start_game(background_tasks: BackgroundTasks):
 
     viz = _viz  # 捕获引用
 
-    def _run():
-        try:
-            _run_experiment(visualizer=viz)
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            viz.emit("error", {"msg": f"{type(e).__name__}: {e}"})
+    if mode == "play":
+        _human_sync = HumanInputState()
+        from role.main import run_human_vs_ai_experiment as _run_human
+        sync = _human_sync
+
+        def _run():
+            try:
+                _run_human(visualizer=viz, human_sync=sync)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                viz.emit("error", {"msg": f"{type(e).__name__}: {e}"})
+    else:
+        _human_sync = None
+
+        def _run():
+            try:
+                _run_experiment(visualizer=viz)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                viz.emit("error", {"msg": f"{type(e).__name__}: {e}"})
 
     _game_thread = threading.Thread(target=_run, daemon=True)
     _game_thread.start()
@@ -110,6 +166,62 @@ async def shutdown():
 async def health():
     return {"status": "ok"}
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 人机对战 API 端点
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/bid")
+async def api_bid(bid: int = Form(...)):
+    """人类提交拍卖出价。"""
+    global _human_sync
+    if _human_sync is None or _human_sync.waiting_for != "bid":
+        return {"status": "error", "msg": "当前不在等待出价状态"}
+    _human_sync.human_bid = bid
+    _human_sync.bid_event.set()
+    return {"status": "ok"}
+
+
+@app.post("/api/deploy")
+async def api_deploy(deployments: str = Form(...)):
+    """人类提交部署。deployments 为 JSON 字符串如 {"1":"snowman","2":"thor"}。"""
+    global _human_sync
+    if _human_sync is None or _human_sync.waiting_for != "deploy":
+        return {"status": "error", "msg": "当前不在等待部署状态"}
+    try:
+        deploy_dict = {int(k): v for k, v in json.loads(deployments).items()}
+    except (json.JSONDecodeError, ValueError, TypeError) as e:
+        return {"status": "error", "msg": f"JSON 解析失败: {e}"}
+    _human_sync.human_deployments = deploy_dict
+    _human_sync.deploy_event.set()
+    return {"status": "ok"}
+
+
+@app.post("/api/confirm")
+async def api_confirm():
+    """人类确认继续（预览/规则/分析/反思阶段）。"""
+    global _human_sync
+    if _human_sync is None or _human_sync.waiting_for != "confirm":
+        return {"status": "error", "msg": "当前不在等待确认状态"}
+    _human_sync.confirm_event.set()
+    return {"status": "ok"}
+
+
+@app.post("/api/summary")
+async def api_summary(ranking_table: str = Form(""), chip_estimate: str = Form("")):
+    """人类提交每日复盘（匿名排名表 + 对手币量估算）。"""
+    global _human_sync
+    if _human_sync is None or _human_sync.waiting_for != "summary":
+        return {"status": "error", "msg": "当前不在等待复盘状态"}
+    _human_sync.ranking_table = ranking_table
+    _human_sync.chip_estimate = chip_estimate
+    _human_sync.summary_event.set()
+    return {"status": "ok"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 复盘页面（不变）
+# ═══════════════════════════════════════════════════════════════════════════
 
 @app.get("/reflections", response_class=HTMLResponse)
 async def reflections_page():

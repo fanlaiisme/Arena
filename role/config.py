@@ -19,7 +19,7 @@ EXTRA_BODY_THINKING = {"thinking": {"type": "enabled"}}
 
 
 def create_client() -> OpenAI:
-    return OpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
+    return OpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL, timeout=60.0)
 
 
 _client: OpenAI | None = None

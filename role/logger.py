@@ -18,13 +18,21 @@ class ExperimentLogger:
     output_dir: str = ""
 
     def __post_init__(self):
+        # 兼容：可通过 output_dir 传递自定义路径，或使用默认
         if not self.output_dir:
             self.output_dir = os.path.join(
                 os.path.dirname(__file__), "output")
         os.makedirs(self.output_dir, exist_ok=True)
+        self.init_log_file()
+
+    def init_log_file(self, filename_prefix: str = "experiment"):
+        """初始化日志文件（延迟调用以支持自定义前缀）。
+
+        兼容旧代码：旧的 __post_init__ 调用此方法完成初始化。
+        """
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.log_path = os.path.join(
-            self.output_dir, f"experiment_{timestamp}.log")
+            self.output_dir, f"{filename_prefix}_{timestamp}.log")
         self.log_file = open(self.log_path, "w", encoding="utf-8")
         self._lock = threading.Lock()
         self._phase_start: dict[str, float] = {}

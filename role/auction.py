@@ -125,9 +125,11 @@ class AuctionSession:
         if a_added or b_added:
             parts = []
             if a_added:
-                parts.append(f"{self.player_a_name} +{a_added} 个")
+                added_names = [c['name'] for c in self.owner_a[a_before:]]
+                parts.append(f"{self.player_a_name} +{a_added} 个（{'、'.join(added_names)}）")
             if b_added:
-                parts.append(f"{self.player_b_name} +{b_added} 个")
+                added_names = [c['name'] for c in self.owner_b[b_before:]]
+                parts.append(f"{self.player_b_name} +{b_added} 个（{'、'.join(added_names)}）")
             return f"自动补分配（按 {AUTO_FILL_PRICE} 游戏币/个）：{', '.join(parts)}"
         return ""
 
