@@ -13,10 +13,23 @@
     display: flex; justify-content: center; align-items: center;
     min-height: 100vh;
   }
+  /* 背景图片四列 */
+  .bg-images {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    display: flex; z-index: 0;
+  }
+  .bg-images img {
+    flex: 1; width: 25%;
+    object-fit: cover;
+  }
   .container {
+    position: relative; z-index: 1;
     text-align: center;
     max-width: 600px;
     padding: 2rem;
+    background: rgba(15, 23, 42, 0.88);
+    border-radius: 16px;
+    border: 1px solid #334155;
   }
   h1 {
     font-size: 3rem;
@@ -77,6 +90,12 @@
 </style>
 </head>
 <body>
+<div class="bg-images">
+  <img src="/tutorial/登录页面图片-1.webp" alt="" />
+  <img src="/tutorial/登录页面图片-3.webp" alt="" />
+  <img src="/tutorial/登录页面图片-2.jpeg" alt="" />
+  <img src="/tutorial/登录页面图片-4.jpg" alt="" />
+</div>
 <div class="container">
   <h1>Arena 竞技场</h1>
   <p class="subtitle">LLM Agent 博弈实验平台</p>

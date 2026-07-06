@@ -210,74 +210,235 @@
     background: #1a2a1a; border: 1px solid #166534; color: #4ade80;
   }
 
-  /* 赛前规则遮罩 */
+  /* 赛前教程遮罩 */
   #rules-overlay {
     position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(15, 23, 42, 0.95); z-index: 200;
+    background: rgba(15, 23, 42, 0.97); z-index: 200;
     display: flex; flex-direction: column; align-items: center;
     justify-content: center; padding: 2rem;
   }
-  #rules-overlay .rules-box {
-    max-width: 650px; max-height: 70vh; overflow-y: auto;
-    background: #1e293b; border: 1px solid #475569; border-radius: 12px;
-    padding: 24px; font-size: 13px; line-height: 1.8; text-align: left;
+  .tutorial-container {
+    width: 100%; max-width: 680px; max-height: 88vh;
+    display: flex; flex-direction: column;
+    background: #1e293b; border: 1px solid #475569; border-radius: 16px;
+    overflow: hidden;
   }
-  #rules-overlay .rules-box h2 { color: var(--cl-gold); margin-bottom: 12px; text-align: center; }
-  #rules-overlay .rules-box h3 { color: var(--dim); font-size: 14px; margin-top: 14px; }
-  #rules-overlay button {
-    margin-top: 20px; background: var(--cl-green); color: #000; border: none;
-    padding: 12px 40px; border-radius: 8px; font-size: 16px; cursor: pointer; font-weight: 600;
+  /* 进度条 */
+  .tutorial-progress {
+    display: flex; align-items: center; justify-content: center;
+    padding: 18px 24px 8px; gap: 0;
   }
-  #rules-overlay button:hover { opacity: .85; }
+  .step-dot {
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+    background: #334155; color: #64748b;
+    border: 2px solid #475569;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+  }
+  .step-dot.done {
+    background: #166534; color: #4ade80; border-color: #22c55e;
+  }
+  .step-dot.active {
+    background: #1e3a5f; color: var(--cl-gold);
+    border-color: var(--cl-gold);
+    box-shadow: 0 0 10px rgba(245,158,11,0.4);
+  }
+  .step-line {
+    width: 36px; height: 2px; background: #475569;
+    flex-shrink: 0;
+  }
+  .step-line.done { background: #22c55e; }
+  /* 内容区 */
+  .tutorial-content {
+    flex: 1; overflow-y: auto; padding: 12px 28px 8px;
+    text-align: left; font-size: 13px; line-height: 1.9;
+  }
+  .tutorial-content h2 {
+    color: var(--cl-gold); font-size: 20px; text-align: center; margin-bottom: 4px;
+  }
+  .tutorial-content .subtitle {
+    text-align: center; color: var(--dim); font-size: 12px; margin-bottom: 16px;
+  }
+  .tutorial-content h3 { color: #e2e8f0; font-size: 14px; margin-top: 14px; margin-bottom: 6px; }
+  .tutorial-content p { margin-bottom: 8px; color: #cbd5e1; }
+  .tutorial-content ul { padding-left: 18px; margin-bottom: 10px; }
+  .tutorial-content li { color: #cbd5e1; margin-bottom: 4px; }
+  .tutorial-content b { color: #e2e8f0; }
+  .tutorial-content .highlight { color: var(--cl-gold); font-weight: 700; }
+  .tutorial-content .warn {
+    background: #4a1e1e80; border-left: 3px solid #dc2626;
+    padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 10px 0;
+    font-size: 12px; color: #fca5a5;
+  }
+  .tutorial-content .tip {
+    background: #1e3a5f80; border-left: 3px solid var(--cl-human);
+    padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 10px 0;
+    font-size: 12px; color: #93c5fd;
+  }
+  /* 角斗士头像网格 */
+  .avatar-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 8px;
+    margin: 14px 0; text-align: center;
+  }
+  .avatar-grid .av-item { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .avatar-grid .av-item img {
+    width: 72px; height: 72px; border-radius: 50%; object-fit: cover;
+    border: 2px solid #475569; background: #0f172a;
+  }
+  .avatar-grid .av-item span { font-size: 11px; color: #94a3b8; }
+  /* 教程图片 */
+  .tutorial-image {
+    text-align: center; margin: 12px 0;
+  }
+  .tutorial-image img {
+    max-width: 100%; border-radius: 8px; border: 1px solid #475569;
+  }
+  .tutorial-image .img-placeholder {
+    display: inline-block; padding: 30px 40px; background: #0f172a80;
+    border: 2px dashed #475569; border-radius: 8px;
+    color: #64748b; font-size: 12px;
+  }
+  /* 导航按钮 */
+  .tutorial-nav {
+    display: flex; align-items: center; justify-content: center;
+    padding: 14px 28px 18px; gap: 12px; border-top: 1px solid #334155;
+  }
+  .tutorial-nav button {
+    border: none; border-radius: 8px; font-size: 14px; cursor: pointer; font-weight: 600;
+    transition: opacity 0.2s;
+  }
+  .tutorial-nav button:hover { opacity: .85; }
+  #btn-prev {
+    background: #334155; color: var(--text); padding: 10px 20px;
+  }
+  #btn-skip {
+    background: transparent; color: var(--dim); padding: 10px 16px;
+    font-size: 12px; font-weight: 400; text-decoration: underline;
+  }
+  #btn-next {
+    background: var(--cl-green); color: #000; padding: 10px 32px;
+    font-size: 15px;
+  }
+  #btn-prev.hidden { visibility: hidden; }
+
+  /* 布局引导覆盖层 —— 半透明蒙版 + 三列高亮指示 */
+  #orient-overlay {
+    display: none;
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 200;
+    /* 与 body 相同 grid: topbar 48px / main 1fr / statusbar 100px */
+    grid-template-rows: 48px 1fr 100px;
+  }
+  #orient-overlay.show { display: grid; }
+  /* 三列面板 —— 与 #main 完全相同的 grid 参数 */
+  .orient-panels {
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: 2fr 420px 0.6fr;
+    gap: 8px; padding: 8px;
+  }
+  .orient-callout {
+    border-radius: 10px; padding: 12px 14px;
+    font-size: 12px; line-height: 1.7; text-align: left;
+    display: flex; flex-direction: column;
+    justify-content: center;
+    /* 让下层面板透过来 */
+    background: rgba(30, 41, 59, 0.35);
+    border: 2px dashed var(--cl-gold);
+    color: #e2e8f0;
+    position: relative;
+  }
+  .orient-callout:nth-child(1) { border-color: var(--cl-human); }
+  .orient-callout:nth-child(2) { border-color: var(--cl-gold); }
+  .orient-callout:nth-child(3) { border-color: var(--cl-ai); }
+  .orient-callout .num {
+    position: absolute; top: -12px; left: 14px;
+    width: 26px; height: 26px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800; color: #000;
+  }
+  .orient-callout:nth-child(1) .num { background: var(--cl-human); }
+  .orient-callout:nth-child(2) .num { background: var(--cl-gold); }
+  .orient-callout:nth-child(3) .num { background: var(--cl-ai); }
+  .orient-callout h3 { font-size: 14px; margin: 2px 0 4px; }
+  .orient-callout p { color: #cbd5e1; font-size: 11px; margin: 0; }
+  /* 已知晓按钮放在底部状态栏位置 */
+  .orient-btn-row {
+    grid-row: 3;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #orient-dismiss {
+    background: var(--cl-green); color: #000; border: none;
+    padding: 12px 40px; border-radius: 8px; font-size: 16px;
+    cursor: pointer; font-weight: 600; z-index: 201;
+    pointer-events: auto;
+  }
+  #orient-dismiss:hover { opacity: .85; }
+  /* 呼吸动画 */
+  .orient-callout {
+    animation: orient-glow 2s ease-in-out infinite;
+  }
+  .orient-callout:nth-child(2) { animation-delay: 0.25s; }
+  .orient-callout:nth-child(3) { animation-delay: 0.5s; }
+  @keyframes orient-glow {
+    0%, 100% { box-shadow: 0 0 6px rgba(255,255,255,0.1); }
+    50% { box-shadow: 0 0 16px rgba(255,255,255,0.25); }
+  }
 </style>
 </head>
 <body>
 
-<!-- 赛前规则遮罩 -->
+<!-- 赛前教程遮罩 -->
 <div id="rules-overlay">
-  <div class="rules-box">
-    <h2>竞技场博弈规则</h2>
-    <h3>基础设定</h3>
-    <p>双方初始各 <b>800 游戏币</b>。实验持续 <b>3 天</b>，每天重新拍卖角斗士，进行 <b>3 局 1v1 比赛</b>。</p>
-
-    <h3>拍卖规则</h3>
-    <ul>
-      <li>每天从 20 名角斗士中随机抽取 9 名进入拍卖池，逐个展示</li>
-      <li><b>一次性暗标</b>：双方各提交一个出价数字（0=弃权，50~150），直接比大小</li>
-      <li><b>双方都扣出价</b>：无论谁赢，双方均扣自己的出价。输方出价转入自己的<b>蓄奖池</b></li>
-      <li>蓄奖池的 point 是<b>死钱</b>，不能用于竞拍</li>
-      <li>出价相同则重拍（最多 1 次），再次相同则跳过</li>
-      <li>一方先满 3 人 → 对方系统补齐（85 币/人）</li>
-    </ul>
-
-    <h3>比赛与 Point 结算</h3>
-    <ul>
-      <li>比赛不下注 —— 游戏币只在拍卖环节支出</li>
-      <li>拍卖获得角斗士时 point = 成交价；系统补齐 point = 85</li>
-      <li>比赛后胜方夺取 <b>min(己方 point, 败方 point)</b></li>
-      <li><b>每天第 2 局</b> 夺取量 ×1.5</li>
-    </ul>
-
-    <h3>每日胜者奖励</h3>
-    <ul>
-      <li>3 局结束后胜场多者为今日胜者</li>
-      <li>胜者蓄奖池 ≤0 无转换；0&lt;pool&lt;50 全部兑为游戏币；pool≥50 兑 50 游戏币</li>
-    </ul>
-
-    <h3>疲劳机制</h3>
-    <ul>
-      <li>出战角斗士疲劳恶化：1.0→0.8, 0.9→0.8, 0.8→0.6, 0.6→0.6</li>
-      <li>每日结算时未出战角斗士恢复一级</li>
-    </ul>
-
-    <h3>重要提示</h3>
-    <ul>
-      <li><b>无属性相克</b>：不存在冰克火、光克暗等关系，判断强弱只看胜率</li>
-      <li>3 天结束后蓄奖池 point 1:1 兑换为游戏币，比较总额定胜负</li>
-      <li>同一天不能用同一个角斗士两次</li>
-    </ul>
+  <div class="tutorial-container">
+    <!-- 进度条 -->
+    <div class="tutorial-progress" id="tutorial-progress">
+      <span class="step-dot active" id="dot-0">1</span>
+      <span class="step-line" id="line-0"></span>
+      <span class="step-dot" id="dot-1">2</span>
+      <span class="step-line" id="line-1"></span>
+      <span class="step-dot" id="dot-2">3</span>
+      <span class="step-line" id="line-2"></span>
+      <span class="step-dot" id="dot-3">4</span>
+      <span class="step-line" id="line-3"></span>
+      <span class="step-dot" id="dot-4">5</span>
+      <span class="step-line" id="line-4"></span>
+      <span class="step-dot" id="dot-5">6</span>
+    </div>
+    <!-- 内容区（JS 动态填充） -->
+    <div class="tutorial-content" id="tutorial-content"></div>
+    <!-- 导航 -->
+    <div class="tutorial-nav">
+      <button id="btn-prev" class="hidden" onclick="prevTutorialStep()">← 上一步</button>
+      <button id="btn-skip" onclick="skipTutorial()">跳过教程，直接开始</button>
+      <button id="btn-next" onclick="nextTutorialStep()">继续 →</button>
+    </div>
   </div>
-  <button onclick="startGame()">我已理解规则，开始游戏</button>
+</div>
+
+<!-- 布局引导覆盖层（半透明，与 body 同 grid，三列对齐 #main） -->
+<div id="orient-overlay">
+  <div class="orient-panels">
+    <div class="orient-callout">
+      <span class="num">1</span>
+      <h3>📋 你的信息面板</h3>
+      <p>情报预览卡片 · 匿名胜率排名 · 角斗士名单<br>下方聊天区记录系统提示和操作历史</p>
+    </div>
+    <div class="orient-callout">
+      <span class="num">2</span>
+      <h3>🎯 核心操作区</h3>
+      <p>拍卖卡片 · 部署表单 · 对阵展示<br><b>下方结果区保留所有拍卖和对战的系统结果，可用鼠标滚轮查看</b></p>
+    </div>
+    <div class="orient-callout">
+      <span class="num">3</span>
+      <h3>🤖 对手公开信息</h3>
+      <p>仅显示 AI 已公开的角斗士阵容<br>AI 游戏币/蓄奖池/策略均<b>不可见</b></p>
+    </div>
+  </div>
+  <div class="orient-btn-row">
+    <button id="orient-dismiss" onclick="dismissOrientation()">已知晓，开始游戏</button>
+  </div>
 </div>
 
 <!-- 规则折叠面板（游玩中查阅） -->
@@ -286,7 +447,7 @@
 <!-- 顶栏 -->
 <div id="topbar">
   <h1>⚔ Arena 人机对战</h1>
-  <button class="btn-rules" onclick="toggleRules()">📋 规则参考</button>
+  <button class="btn-rules" onclick="toggleRules()">📋 规则参考 <span style="font-size:10px;opacity:.6">← 可点击</span></button>
   <button class="btn-rules" onclick="resetGame(false)" style="background:#ef444420;color:#ef4444">🔄 重置游戏</button>
   <a href="/" onclick="resetGame(true); return false" style="font-size:12px;color:var(--dim);text-decoration:none;padding:4px 10px;border:1px solid #475569;border-radius:6px">🏠 返回首页</a>
   <span id="phase-label">等待开始</span>
@@ -303,8 +464,8 @@
       <span>你</span>
     </div>
     <div style="display:flex;gap:4px;margin-bottom:2px" id="human-info-tabs">
-      <button class="btn-rules" onclick="toggleHumanTab('ranking')" style="font-size:10px;padding:3px 8px">📊 匿名排名</button>
-      <button class="btn-rules" onclick="toggleHumanTab('chars')" style="font-size:10px;padding:3px 8px">📋 角斗士表</button>
+      <button class="btn-rules" onclick="toggleHumanTab('ranking')" style="font-size:10px;padding:3px 8px">📊 匿名排名 <span style="font-size:9px;opacity:.6">← 可点击</span></button>
+      <button class="btn-rules" onclick="toggleHumanTab('chars')" style="font-size:10px;padding:3px 8px">📋 角斗士表 <span style="font-size:9px;opacity:.6">← 可点击</span></button>
     </div>
     <div id="human-tab-ranking" style="display:none;max-height:250px;overflow-y:auto;font-size:12px;line-height:1.6;background:#0f172a60;border-radius:6px;padding:6px;margin-bottom:2px;white-space:pre-wrap;color:#94a3b8">
       <textarea id="ranking-textarea" style="width:100%;min-height:200px;background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:4px;padding:6px;font-size:12px;line-height:1.6;resize:vertical;font-family:monospace" placeholder="排名数据加载中..."></textarea>
@@ -946,8 +1107,263 @@ function toggleRules() {
   const el = document.getElementById("rules-collapse");
   el.classList.toggle("show");
   if (el.classList.contains("show") && !el.innerHTML) {
-    // 首次展开时加载规则文本
-    el.innerHTML = document.querySelector("#rules-overlay .rules-box").innerHTML;
+    el.innerHTML = RULES_REFERENCE_HTML;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 规则参考摘要（游玩中查阅，紧凑排版）
+// ═══════════════════════════════════════════════════════════
+const RULES_REFERENCE_HTML = `
+  <h3 style="color:var(--cl-gold);margin-bottom:8px">规则摘要</h3>
+  <b>基础设定</b>: 双方各800游戏币，3天×3局。20名角斗士，无属性相克。<br>
+  <b>拍卖暗标</b>: 双方出价(0或50~150)，都扣出价。赢家得角斗士(point=出价)，输家出价→蓄奖池(死钱)。一方满3人→对方补齐(85/人)。
+    <a href="/rule-ref?step=3" target="_blank" style="font-size:11px;color:var(--cl-gold);margin-left:4px;text-decoration:underline">查看详情 →</a><br>
+  <b>比赛与Point</b>: 胜方夺取min(己方point,败方point)。<b>第2局×1.5</b>。疲劳:1.0→0.8→0.6，休息恢复，0.8→0.9。
+    <a href="/rule-ref?step=4" target="_blank" style="font-size:11px;color:var(--cl-gold);margin-left:4px;text-decoration:underline">查看详情 →</a><br>
+  <b>每日奖励</b>: 胜场多者胜，蓄奖池≤0不换，&lt;50全换，≥50换50。
+    <a href="/rule-ref?step=5" target="_blank" style="font-size:11px;color:var(--cl-gold);margin-left:4px;text-decoration:underline">查看详情 →</a><br>
+  <b>最终结算</b>: 3天后蓄奖池1:1→游戏币，总财富多者胜。<br>
+  <b>⚠ 破产条件</b>: 游戏币&lt;50强制弃权；系统补齐时若游戏币余额不足，从蓄奖池里扣除，若蓄奖池也不足→游戏结束。
+    <br><br>
+  <a href="/rule-ref?step=2" target="_blank" style="display:inline-block;font-size:12px;color:var(--cl-gold);text-decoration:underline;padding:6px 12px;border:1px solid var(--cl-gold);border-radius:6px">📖 查看全名词解释与非对称情报机制</a>`;
+
+// ═══════════════════════════════════════════════════════════
+// 教程 6 步内容
+// ═══════════════════════════════════════════════════════════
+const TUTORIAL_STEPS = [
+  { // Step 0: 角斗士竞技场 —— 底层的战斗引擎
+    title: "角斗士竞技场 —— 底层的战斗引擎",
+    body: `
+      <p>欢迎！你即将参与的是一场 <b class="highlight">博弈游戏</b>——你和 AI 对手各自通过<b>拍卖</b>组建自己的角斗士队伍，然后派出角斗士<b>互相厮杀</b>，胜者从败者身上<b>夺取点数</b>。“三天”下来，总财富更多的一方获胜。</p>
+      <p>那么这个游戏里角斗士到底是怎么对战的？答案是：它建立在<b>底层「角斗士竞技场」</b>之上。先来看看这个底层小游戏长什么样——</p>
+      <div class="tutorial-image">
+        <img src="/tutorial/角斗士游戏展示-1.png" alt="角斗士竞技场选角界面" style="max-width:100%;border-radius:8px;border:1px solid #475569" />
+        <p style="font-size:11px;color:var(--dim);margin-top:4px">▲ 竞技场里有20 名角斗士，每位都有独特的武器和技能</p>
+      </div>
+      <h3>这不是回合制，是实时战斗！</h3>
+      <p>图中的小球就是两位角斗士，他们在一个<b>800×800 的圆形竞技场</b>里实时对战。他们会走位、释放技能、召唤宠物帮手、活用武器————这一切都是自动的，你只管看戏。</p>
+      <div class="tutorial-image">
+        <img src="/tutorial/角斗士游戏展示-2.png" alt="角斗士对战场面" style="max-width:100%;border-radius:8px;border:1px solid #475569" />
+        <p style="font-size:11px;color:var(--dim);margin-top:4px">▲ 圆形竞技场中的实时搏杀——闪电、飞镖、炸弹满屏飞</p>
+      </div>
+      <h3>20 位角斗士，20 种打法</h3>
+      <p>忍者会隐身放分身、狂战士越战越勇、森林精灵召唤生命之树、雪人召唤师带着宠物雪人一起上……没有两个角斗士的打法是一样的。</p>
+      <div class="tutorial-image">
+        <img src="/tutorial/角斗士游戏展示-3.png" alt="角斗士激战中" style="max-width:100%;border-radius:8px;border:1px solid #475569" />
+        <p style="font-size:11px;color:var(--dim);margin-top:4px">▲ 每位角斗士都有独特的武器、技能和战斗风格</p>
+      </div>
+      <div class="tip">💡 <b>角斗士的胜率数据是怎么来的？</b><br>
+      每一位角斗士都要跟其余 <b>19 名</b>角斗士各打 <b>200 场</b>——也就是说，每个角斗士背后都有 <b>19 × 200 = 3800 场</b>模拟对战的数据支撑。20 名角斗士加起来，系统跑过 <b>数万局</b>自动对战。<br><br>
+      你在博弈游戏中<b>不需要操控</b>战斗，只需要<b>拍卖买入</b>角斗士、<b>部署上场</b>，系统会在后台开启角斗士间的对决，你看不到，系统最终会告知胜负结果。情报阶段显示的胜率，就是这成千上万局对战的结果！</div>
+    `
+  },
+  { // Step 1: 认识角斗士与你的对手
+    title: "认识角斗士与你的对手",
+    body: `
+      <p>欢迎来到竞技场！在你开始博弈之前，先来认识一下<b>你要指挥的战士们</b>和<b>你的对手</b>。</p>
+      <h3>角斗士是什么？</h3>
+      <p>竞技场中有 <b class="highlight">20 名独一无二的角斗士</b>，每一位都有自己的武器、技能和战斗风格。比如：</p>
+      <ul>
+        <li><b>雷神</b> —— 召唤闪电打击敌人</li>
+        <li><b>忍者</b> —— 隐身分身、飞镖陷阱</li>
+        <li><b>熔岩射手</b> —— 吐出熔岩弹灼烧敌人</li>
+        <li><b>狂战士</b> —— 越战越勇的近战猛男</li>
+      </ul>
+      <div class="avatar-grid">
+        <div class="av-item"><img src="/avatars/thor.png" onerror="this.style.display='none'" /><span>雷神</span></div>
+        <div class="av-item"><img src="/avatars/ninja.png" onerror="this.style.display='none'" /><span>忍者</span></div>
+        <div class="av-item"><img src="/avatars/elf.png" onerror="this.style.display='none'" /><span>精灵</span></div>
+        <div class="av-item"><img src="/avatars/berserker.png" onerror="this.style.display='none'" /><span>狂战士</span></div>
+        <div class="av-item"><img src="/avatars/snowman.png" onerror="this.style.display='none'" /><span>雪人召唤师</span></div>
+        <div class="av-item"><img src="/avatars/lava.png" onerror="this.style.display='none'" /><span>熔岩射手</span></div>
+      </div>
+      <h3>怎么战斗？</h3>
+      <p>角斗士在圆形竞技场中 <b>1v1 实时自动战斗</b>。你不需要操控他们——你只负责<b>拍卖买入</b>和<b>部署上场</b>，剩下的交给他们自己打。</p>
+      <div class="tip">💡 <b>关键认知</b>：角斗士的强弱不看外表，看<b>胜率数据</b>。胜率来自上千局模拟对战统计。<b class="highlight">不存在属性相克</b>——火不克冰，光不克暗，一切只看实战数据。</div>
+      <h3>你的对手是谁？</h3>
+      <div style="display:flex;align-items:center;gap:16px;margin:12px 0;padding:14px;background:#1e293b;border-radius:10px;border:1px solid #475569">
+        <img src="/players/夜神月.png" style="width:180px;height:180px;border-radius:50%;object-fit:cover;border:2px solid var(--cl-ai)" alt="夜神月" />
+        <div>
+          <p style="margin:0;font-size:15px;font-weight:700">夜神月</p>
+          <p style="margin:4px 0 0;font-size:12px;color:var(--dim)">你的 AI 对手，由 <b style="color:#e2e8f0">DeepSeek-v4</b> 驱动</p>
+        </div>
+      </div>
+      <p>他和你一样会<b>分析情报、思考策略</b>。在拍卖和部署环节，你们各自独立决策——<b>如果你的操作比较快，可能需要稍等一会儿</b>，AI 也在认真思考它的最优策略。</p>
+      <div class="tip">🤖 AI 和你接收到的游戏规则完全一样，它也会认真阅读每一条规则。别想偷懒哦！</div>
+    `
+  },
+  { // Step 2: 游戏大局观
+    title: "游戏大局观 —— 这三天你要做什么？",
+    body: `
+      <p>好，你认识了角斗士。现在站在高处，俯瞰整个博弈流程。</p>
+      <h3>你是谁？</h3>
+      <p>你是一个<b>赌徒</b>，对手是一个 AI。你们要在 <b class="highlight">3 天</b>的时间里，通过拍卖买入角斗士、部署他们战斗，争夺最终的胜利。</p>
+      <h3>每天做什么？</h3>
+      <p>每天的流程如下：</p>
+      <ul>
+        <li><b>📊 情报预览</b> —— 看到若干角斗士的胜率数据（第1天5名、第2天4名、第3天3名）</li>
+        <li><b>🔨 拍卖</b> —— 从 9 名候选角斗士（系统纯随机抽取）中竞拍，凑齐你的 3 人阵容</li>
+        <li><b>⚔ 部署 & 比赛</b> —— 将你的角斗士部署到 3 局比赛中，与AI拍卖到的 3 名角斗士自动战斗</li>
+        <li><b>🏆 每日奖励</b> —— 当天胜场多的人获得蓄奖池兑换</li>
+      </ul>
+      <h3>📊 情报预览详解</h3>
+      <p>每天拍卖开始前，系统会从 20 名角斗士中<b>随机抽取</b>若干名，展示它们的胜率数据。你和 AI 各自接收到的角斗士<b>独立随机抽取，可能相同也可能不同</b>——你看不到 AI 的情报，AI 也看不到你的。</p>
+      <p>情报预览的格式如下（以第 1 天 5 名为例）：</p>
+      <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin:8px 0;font-size:12px;line-height:1.8;font-family:monospace">
+        <span style="color:var(--cl-gold)">📋 情报预览（第 1 天）</span><br><br>
+        <b>雷神 (thor)</b> — 胜率 <span style="color:var(--cl-gold)">62.3%</span>（2367胜/3800场，平局 89 场）<br>
+        <b>忍者 (ninja)</b> — 胜率 <span style="color:var(--cl-gold)">58.1%</span>（2208胜/3800场，平局 112 场）<br>
+        <b>精灵 (elf)</b> — 胜率 <span style="color:var(--cl-gold)">54.7%</span>（2079胜/3800场，平局 95 场）<br>
+        <b>狂战士 (berserker)</b> — 胜率 <span style="color:var(--cl-gold)">51.2%</span>（1946胜/3800场，平局 130 场）<br>
+        <b>雪人召唤师 (snowman)</b> — 胜率 <span style="color:var(--cl-gold)">48.9%</span>（1858胜/3800场，平局 76 场）
+      </div>
+      <div class="tip">💡 上面只是示意图，不是真实数据——游戏中的胜率数据来自实际模拟对战结果。</div>
+      <h3>三种货币</h3>
+      <ul>
+        <li><b class="highlight">游戏币</b> —— 「活钱」，用于拍卖出价，双方各有 800 枚</li>
+        <li><b style="color:#a78bfa">Point</b> —— 角斗士的「身价」，Point = 拍卖它的游戏币，比赛中流转</li>
+        <li><b style="color:#f59e0b">蓄奖池</b> —— 「死钱」，不能用于拍卖，但每天胜者可部分兑换，3天后以 1:1 全部兑回为游戏币</li>
+      </ul>
+      <div class="tip">🎯 <b>你的目标</b>：3 天结束后，<b>游戏币</b> 更多的一方获胜。</div>
+    `
+  },
+  { // Step 3: 拍卖暗标
+    title: "拍卖暗标 —— 最核心的博弈环节",
+    body: `
+      <p>现在来到<b class="highlight">最关键的一环</b>——拍卖。这部分如果理解不到位，你会输得很冤枉。</p>
+      <h3>暗标怎么玩？</h3>
+      <p>每天从 20 名角斗士中随机抽 9 名进入拍卖池，逐个展示。你和 AI <b>同时秘密出价</b>，然后系统会公布结果。</p>
+      <h3>⚠ 核心规则：双方都扣出价(游戏币)</h3>
+      <p>无论你赢得了角斗士还是输了，<b>你出的价都会从你的游戏币中扣除</b>。区别在于钱的去向：</p>
+      <ul>
+        <li><b>你赢了</b> → 出价扣掉，你获得角斗士（出价 = 角斗士的 point）</li>
+        <li><b>你输了</b> → 出价扣掉，钱转入你的<b style="color:#f59e0b">蓄奖池</b>（死钱！不能再用于拍卖）</li>
+        <li><b>对手赢了</b> → 对手扣出价，获得角斗士</li>
+        <li><b>对手输了</b> → 对手扣出价，转入对手的蓄奖池</li>
+      </ul>
+      <div class="tip">🧠 举个栗子：你出 80，AI 出 60。你赢，扣 80 游戏币得到角斗士(point=80)。AI 输，扣 60 游戏币转入自己的蓄奖池——这 60 变成了死钱。</div>
+      <h3>出价规则</h3>
+      <ul>
+        <li><b>0</b> = 弃权，不扣钱</li>
+        <li><b>50~150</b> = 有效出价（起拍价 50，一口价上限 150）</li>
+        <li>出价相同 → 重拍一次，再次相同 → 跳过该角斗士</li>
+      </ul>
+      <h3>结果展示</h3>
+      <p>每轮暗标结束后，系统会公布本轮结果：</p>
+      <ul>
+        <li>一方出价更高 → 系统公告「<b>你/对方 以 XX 游戏币拍下了 XXX</b>」</li>
+        <li>双方出价相同 → 系统提示「<b>双方平局，请重新出价</b>」</li>
+        <li>双方都出 0 → 系统提示「<b>双方均弃权，跳过该角斗士</b>」</li>
+      </ul>
+      <div class="tip">👀 <b>小提示</b>：拍卖结果只展示<b>赢家的出价</b>，输家的出价不会公开——你需要推测对手的蓄奖池里进了多少钱。</div>
+      <h3>系统补齐</h3>
+      <p>当你或对手先凑齐 3 名角斗士后，<b>对方会自动从拍卖池的剩余角斗士中获得补齐，玩家无权选择</b>（每个 85 游戏币）。</p>
+      <div class="warn">⚠ <b>边缘情况预警</b><br>
+      • 游戏币余额 <b>低于 50</b> → 无法出价，后续拍卖只能弃权<br>
+      • 系统补齐时游戏币不足 → 先从<b>蓄奖池</b>中扣除；若蓄奖池也不够 → <b>触发破产</b>，对方直接赢得你的 800 游戏币，<b>游戏立即结束！</b></div>
+    `
+  },
+  { // Step 4: 比赛与Point
+    title: "比赛与 Point —— 角斗士如何为你赚钱",
+    body: `
+      <p>买了角斗士，就要派他们上场。比赛不花游戏币，但 <b>Point 会在胜负之间流转</b>。</p>
+      <h3>Point 是什么？</h3>
+      <p>角斗士的 Point = 你在拍卖中付出的成交价（系统补齐的角斗士 point = 85）。<b>每局比赛结束后，双方角斗士的 point 都会转入各自的蓄奖池</b>，然后在下一局重新分配。</p>
+      <h3>比赛怎么结算？</h3>
+      <ul>
+        <li>角斗士自动 1v1 对战，胜方夺取 <b>min(己方 point, 败方 point)</b></li>
+      </ul>
+      <p><b>例 1：高 point 角斗士获胜</b></p>
+      <p>你的角斗士 point=<b>80</b>，对手 point=<b>60</b>，你赢了 → 你夺走 <b>60</b> point。比赛结束后，你的 80 point 和对手被夺走的 60 point 全部转入你的蓄奖池，对手剩余的 0 point 归零。</p>
+      <p><b>例 2：高 point 角斗士输给低 point 角斗士</b></p>
+      <p>你的角斗士 point=<b>80</b>，对手 point=<b>60</b>，你输了 → 对手夺走 min(80,60)=<b>60</b> point。比赛结束后，你的 80 point 被夺走 60（剩余 20 转入你的蓄奖池），对手的 60 + 夺来的 60 = 120 point 全部转入对手的蓄奖池。</p>
+      <div class="tip">💡 无论输赢，你的 point 最终都会进入<b>蓄奖池</b>——赢了拿更多，输了拿剩余的。</div>
+      <h3>⚡ 第 2 局 ×1.5 倍率</h3>
+      <p>每天第 2 局的 point 转移量 <b class="highlight">乘以 1.5</b>。这是单局收益最高的一场！</p>
+      <p><b>例 1（你赢）</b>：如上，你 point=80 赢对手 point=60 → 夺取 60 × 1.5 = <b>90 point</b>。</p>
+      <p><b>例 2（你输）</b>：你 point=80 输给对手 point=60 → 对手夺取 60 × 1.5 = <b>90 point</b>。同样被放大！</p>
+      <div class="tip">🧠 第 2 局 ×1.5 是一把双刃剑——赢了大赚，输了也大亏。以及蓄奖池可以为负数。</div>
+      <h3>疲劳机制</h3>
+      <ul>
+        <li>角斗士<b>连续三天出战</b>，HP 逐日恶化：<b>1.0 → 0.8 → 0.6</b></li>
+        <li>中间休息一天再出战，HP 会<b>恢复一级</b>：例如第一天出战后 HP=0.8，第二天休息，第三天出战 → HP 恢复到 <b>0.9</b></li>
+        <li>同一天<b>不能重复使用</b>同一名角斗士</li>
+      </ul>
+      <div class="tip">🔄 <b>每天结束后</b>：双方的角斗士会被释放。第二天系统会重新从 20 名角斗士中<b>随机抽取 9 名</b>进入新的拍卖池——所以每天的阵容都是全新的，昨天的优势不会带到今天。</div>
+    `
+  },
+  { // Step 5: 奖励与结算
+    title: "每日奖励与最终结算 —— 如何笑到最后",
+    body: `
+      <p>坚持了三天，来看看最终的胜负如何决出。</p>
+      <h3>每日胜者奖励</h3>
+      <p>每天 3 局结束后，胜场多的一方为<b>当日胜者</b>，可将蓄奖池兑换为游戏币：</p>
+      <ul>
+        <li>蓄奖池 ≤ 0 → <b>不兑换</b></li>
+        <li>蓄奖池 &lt; 50 → <b>全部兑换</b>为游戏币</li>
+        <li>蓄奖池 ≥ 50 → 只兑换 <b>50</b> 游戏币（封顶）</li>
+      </ul>
+      <p>平局则双方都不兑换。蓄奖池中剩余的 point 留到第二天。</p>
+      <h3>最终结算（3 天后）</h3>
+      <p>3 天结束后，蓄奖池中的 point <b>1:1 兑换为游戏币</b>，加上剩余游戏币 = 总财富。总财富更多的一方<b>最终获胜</b>。</p>
+      <div class="tip">🎯 <b>策略忠告</b><br>
+      • 如果以赢钱为目的，建议准备上纸和笔<br>
+      • 目前游戏的每个环节均不限时间，可充分思考后再做决定<br>
+      • 观察对手的出价模式，建立对手模型<br>
+      • 估计对手的出价范围，游戏币范围，知道哪些角斗士情报，都非常重要</div>
+    `
+  }
+];
+
+let tutorialStep = 0;
+
+function renderTutorialStep(n) {
+  const step = TUTORIAL_STEPS[n];
+  const isLast = (n === 5);
+  const content = document.getElementById("tutorial-content");
+  content.innerHTML = `
+    <h2>${step.title}</h2>
+    <div class="subtitle">第 ${n+1} 步 / 共 6 步</div>
+    ${step.body}
+  `;
+  content.scrollTop = 0;
+
+  // 更新进度点
+  for (let i = 0; i < 6; i++) {
+    const dot = document.getElementById("dot-" + i);
+    const line = i < 5 ? document.getElementById("line-" + i) : null;
+    dot.className = "step-dot";
+    if (i < n) { dot.classList.add("done"); if (line) line.classList.add("done"); }
+    else if (i === n) { dot.classList.add("active"); }
+    if (line) line.className = "step-line" + (i < n ? " done" : "");
+  }
+
+  // 按钮状态
+  document.getElementById("btn-prev").classList.toggle("hidden", n === 0);
+  document.getElementById("btn-next").textContent = isLast ? "我已理解，开始游戏！" : "继续 →";
+  document.getElementById("btn-next").style.background = isLast ? "#22c55e" : "var(--cl-green)";
+}
+
+function nextTutorialStep() {
+  if (tutorialStep >= 5) {
+    startGame();
+    return;
+  }
+  tutorialStep++;
+  renderTutorialStep(tutorialStep);
+}
+
+function prevTutorialStep() {
+  if (tutorialStep > 0) {
+    tutorialStep--;
+    renderTutorialStep(tutorialStep);
+  }
+}
+
+function skipTutorial() {
+  if (confirm("确定要跳过教程，直接开始游戏吗？\n\n建议第一次玩的玩家完成教程，了解拍卖暗标的核心机制。")) {
+    startGame();
   }
 }
 
@@ -966,9 +1382,18 @@ async function resetGame(toHome) {
 // 开始游戏
 // ═══════════════════════════════════════════════════════════
 
+// 页面加载时渲染教程第一步
+renderTutorialStep(0);
+
 async function startGame() {
-  // 隐藏规则遮罩
+  // 隐藏教程遮罩，显示布局引导
   document.getElementById("rules-overlay").style.display = "none";
+  document.getElementById("orient-overlay").classList.add("show");
+}
+
+async function dismissOrientation() {
+  // 隐藏布局引导，正式启动游戏
+  document.getElementById("orient-overlay").classList.remove("show");
   document.getElementById("btn-start").disabled = true;
   gameStarted = true;
   clearAll();

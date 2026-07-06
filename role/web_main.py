@@ -33,12 +33,15 @@ app = FastAPI(title="Arena 可视化仪表盘")
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 _AVATAR_DIR = Path(__file__).parent / "data" / "Public" / "avatar"
 _PLAYERS_DIR = Path(__file__).parent / "data" / "Public" / "players"
+_TUTORIAL_DIR = Path(__file__).parent / "data" / "Public" / "tutorial"
 
-# 挂载头像静态目录
+# 挂载静态目录
 if _AVATAR_DIR.exists():
     app.mount("/avatars", StaticFiles(directory=str(_AVATAR_DIR)), name="avatars")
 if _PLAYERS_DIR.exists():
     app.mount("/players", StaticFiles(directory=str(_PLAYERS_DIR)), name="players")
+if _TUTORIAL_DIR.exists():
+    app.mount("/tutorial", StaticFiles(directory=str(_TUTORIAL_DIR)), name="tutorial")
 
 # 全局单例
 _viz: Visualizer | None = None
@@ -75,6 +78,15 @@ async def play_page():
     if html_path.exists():
         return html_path.read_text(encoding="utf-8")
     return HTMLResponse("<h1>play.html not found</h1>", status_code=404)
+
+
+@app.get("/rule-ref", response_class=HTMLResponse)
+async def rule_ref():
+    """游戏内规则参考独立页面（跳转查看详细规则）。"""
+    html_path = _TEMPLATE_DIR / "rule-ref.html"
+    if html_path.exists():
+        return html_path.read_text(encoding="utf-8")
+    return HTMLResponse("<h1>rule-ref.html not found</h1>", status_code=404)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

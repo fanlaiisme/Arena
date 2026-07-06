@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>规则详解</title>
+<style>
+  :root {
+    --cl-gold: #f59e0b; --cl-green: #22c55e; --cl-human: #2563eb;
+    --cl-gray: #64748b; --cl-purple: #a78bfa;
+    --bg: #0f172a; --panel: #1e293b; --text: #e2e8f0; --dim: #94a3b8;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; display: flex; justify-content: center;
+    padding: 2rem;
+  }
+  .page {
+    width: 100%; max-width: 700px;
+    background: var(--panel); border: 1px solid #475569;
+    border-radius: 12px; padding: 32px;
+    font-size: 14px; line-height: 2;
+    align-self: flex-start;
+  }
+  .page h2 { color: var(--cl-gold); font-size: 22px; text-align: center; margin-bottom: 4px; }
+  .page .subtitle { text-align: center; color: var(--dim); font-size: 12px; margin-bottom: 20px; }
+  .page h3 { color: #e2e8f0; font-size: 15px; margin-top: 18px; margin-bottom: 8px; }
+  .page p { margin-bottom: 10px; color: #cbd5e1; }
+  .page ul { padding-left: 20px; margin-bottom: 12px; }
+  .page li { color: #cbd5e1; margin-bottom: 6px; }
+  .page b { color: #e2e8f0; }
+  .page .highlight { color: var(--cl-gold); font-weight: 700; }
+  .page .warn {
+    background: #4a1e1e80; border-left: 3px solid #dc2626;
+    padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 12px 0;
+    font-size: 13px; color: #fca5a5;
+  }
+  .page .tip {
+    background: #1e3a5f80; border-left: 3px solid var(--cl-human);
+    padding: 10px 14px; border-radius: 0 6px 6px 0; margin: 12px 0;
+    font-size: 13px; color: #93c5fd;
+  }
+  .page .avatar-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 8px;
+    margin: 14px 0; text-align: center;
+  }
+  .page .avatar-grid .av-item { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .page .avatar-grid .av-item img {
+    width: 72px; height: 72px; border-radius: 50%; object-fit: cover;
+    border: 2px solid #475569; background: #0f172a;
+  }
+  .page .avatar-grid .av-item span { font-size: 11px; color: #94a3b8; }
+  .page .info-card {
+    background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+    padding: 12px; margin: 8px 0; font-size: 12px; line-height: 1.8;
+    font-family: monospace;
+  }
+  .page .player-row {
+    display: flex; align-items: center; gap: 16px;
+    padding: 16px; background: #1e293b; border-radius: 10px;
+    border: 1px solid #475569; margin: 12px 0;
+  }
+  .page .player-row img {
+    width: 100px; height: 100px; border-radius: 50%;
+    object-fit: cover; border: 2px solid #dc2626;
+  }
+</style>
+</head>
+<body>
+<div class="page" id="content">
+  <p style="text-align:center;color:var(--dim)">加载中...</p>
+</div>
+
+<script>
+const STEPS = {
+  // dot-2: 游戏大局观
+  2: {
+    title: "游戏大局观 —— 这三天你要做什么？",
+    body: `
+      <p>好，你认识了角斗士。现在站在高处，俯瞰整个博弈流程。</p>
+      <h3>你是谁？</h3>
+      <p>你是一个<b>赌徒</b>，对手是一个 AI。你们要在 <b class="highlight">3 天</b>的时间里，通过拍卖买入角斗士、部署他们战斗，争夺最终的胜利。</p>
+      <h3>每天做什么？</h3>
+      <ul>
+        <li><b>📊 情报预览</b> —— 看到若干角斗士的胜率数据（第1天5名、第2天4名、第3天3名）</li>
+        <li><b>🔨 拍卖</b> —— 从 9 名候选角斗士（系统纯随机抽取）中竞拍，凑齐你的 3 人阵容</li>
+        <li><b>⚔ 部署 & 比赛</b> —— 将你的角斗士部署到 3 局比赛中，与AI拍卖到的 3 名角斗士自动战斗</li>
+        <li><b>🏆 每日奖励</b> —— 当天胜场多的人获得蓄奖池兑换</li>
+      </ul>
+      <h3>📊 情报预览详解</h3>
+      <p>每天拍卖开始前，系统会从 20 名角斗士中<b>随机抽取</b>若干名，展示它们的胜率数据。你和 AI 各自接收到的角斗士<b>独立随机抽取，可能相同也可能不同</b>——你看不到 AI 的情报，AI 也看不到你的。</p>
+      <p>情报预览的格式如下（以第 1 天 5 名为例）：</p>
+      <div class="info-card">
+        <span style="color:var(--cl-gold)">📋 情报预览（第 1 天）</span><br><br>
+        <b>雷神 (thor)</b> — 胜率 <span style="color:var(--cl-gold)">62.3%</span>（2367胜/3800场，平局 89 场）<br>
+        <b>忍者 (ninja)</b> — 胜率 <span style="color:var(--cl-gold)">58.1%</span>（2208胜/3800场，平局 112 场）<br>
+        <b>精灵 (elf)</b> — 胜率 <span style="color:var(--cl-gold)">54.7%</span>（2079胜/3800场，平局 95 场）<br>
+        <b>狂战士 (berserker)</b> — 胜率 <span style="color:var(--cl-gold)">51.2%</span>（1946胜/3800场，平局 130 场）<br>
+        <b>雪人召唤师 (snowman)</b> — 胜率 <span style="color:var(--cl-gold)">48.9%</span>（1858胜/3800场，平局 76 场）
+      </div>
+      <div class="tip">💡 上面只是示意图，不是真实数据——游戏中的胜率数据来自实际模拟对战结果。</div>
+      <h3>三种货币</h3>
+      <ul>
+        <li><b class="highlight">游戏币</b> —— 「活钱」，用于拍卖出价，双方各有 800 枚</li>
+        <li><b style="color:#a78bfa">Point</b> —— 角斗士的「身价」，Point = 拍卖它的游戏币，比赛中流转</li>
+        <li><b style="color:#f59e0b">蓄奖池</b> —— 「死钱」，不能用于拍卖，但每天胜者可部分兑换，3天后以 1:1 全部兑回为游戏币</li>
+      </ul>
+      <div class="tip">🎯 <b>你的目标</b>：3 天结束后，<b>游戏币</b> 更多的一方获胜。</div>
+    `
+  },
+  // dot-3: 拍卖暗标
+  3: {
+    title: "拍卖暗标 —— 最核心的博弈环节",
+    body: `
+      <p>现在来到<b class="highlight">最关键的一环</b>——拍卖。这部分如果理解不到位，你会输得很冤枉。</p>
+      <h3>暗标怎么玩？</h3>
+      <p>每天从 20 名角斗士中随机抽 9 名进入拍卖池，逐个展示。你和 AI <b>同时秘密出价</b>，然后系统会公布结果。</p>
+      <h3>⚠ 核心规则：双方都扣出价(游戏币)</h3>
+      <p>无论你赢得了角斗士还是输了，<b>你出的价都会从你的游戏币中扣除</b>。区别在于钱的去向：</p>
+      <ul>
+        <li><b>你赢了</b> → 出价扣掉，你获得角斗士（出价 = 角斗士的 point）</li>
+        <li><b>你输了</b> → 出价扣掉，钱转入你的<b style="color:#f59e0b">蓄奖池</b>（死钱！不能再用于拍卖）</li>
+        <li><b>对手赢了</b> → 对手扣出价，获得角斗士</li>
+        <li><b>对手输了</b> → 对手扣出价，转入对手的蓄奖池</li>
+      </ul>
+      <div class="tip">🧠 举个栗子：你出 80，AI 出 60。你赢，扣 80 游戏币得到角斗士(point=80)。AI 输，扣 60 游戏币转入自己的蓄奖池——这 60 变成了死钱。</div>
+      <h3>出价规则</h3>
+      <ul>
+        <li><b>0</b> = 弃权，不扣钱</li>
+        <li><b>50~150</b> = 有效出价（起拍价 50，一口价上限 150）</li>
+        <li>出价相同 → 重拍一次，再次相同 → 跳过该角斗士</li>
+      </ul>
+      <h3>结果展示</h3>
+      <p>每轮暗标结束后，系统会公布本轮结果：</p>
+      <ul>
+        <li>一方出价更高 → 系统公告「<b>你/对方 以 XX 游戏币拍下了 XXX</b>」</li>
+        <li>双方出价相同 → 系统提示「<b>双方平局，请重新出价</b>」</li>
+        <li>双方都出 0 → 系统提示「<b>双方均弃权，跳过该角斗士</b>」</li>
+      </ul>
+      <div class="tip">👀 <b>小提示</b>：拍卖结果只展示<b>赢家的出价</b>，输家的出价不会公开——你需要推测对手的蓄奖池里进了多少钱。</div>
+      <h3>系统补齐</h3>
+      <p>当你或对手先凑齐 3 名角斗士后，<b>对方会自动从拍卖池的剩余角斗士中获得补齐，玩家无权选择</b>（每个 85 游戏币）。</p>
+      <div class="warn">⚠ <b>边缘情况预警</b><br>
+      • 游戏币余额 <b>低于 50</b> → 无法出价，后续拍卖只能弃权<br>
+      • 系统补齐时游戏币不足 → 先从<b>蓄奖池</b>中扣除；若蓄奖池也不够 → <b>触发破产</b>，对方直接赢得你的 800 游戏币，<b>游戏立即结束！</b></div>
+    `
+  },
+  // dot-4: 比赛与Point
+  4: {
+    title: "比赛与 Point —— 角斗士如何为你赚钱",
+    body: `
+      <p>买了角斗士，就要派他们上场。比赛不花游戏币，但 <b>Point 会在胜负之间流转</b>。</p>
+      <h3>Point 是什么？</h3>
+      <p>角斗士的 Point = 你在拍卖中付出的成交价（系统补齐的角斗士 point = 85）。<b>每局比赛结束后，双方角斗士的 point 都会转入各自的蓄奖池</b>，然后在下一局重新分配。</p>
+      <h3>比赛怎么结算？</h3>
+      <ul>
+        <li>角斗士自动 1v1 对战，胜方夺取 <b>min(己方 point, 败方 point)</b></li>
+      </ul>
+      <p><b>例 1：高 point 角斗士获胜</b></p>
+      <p>你的角斗士 point=<b>80</b>，对手 point=<b>60</b>，你赢了 → 你夺走 <b>60</b> point。比赛结束后，你的 80 point 和对手被夺走的 60 point 全部转入你的蓄奖池，对手剩余的 0 point 归零。</p>
+      <p><b>例 2：高 point 角斗士输给低 point 角斗士</b></p>
+      <p>你的角斗士 point=<b>80</b>，对手 point=<b>60</b>，你输了 → 对手夺走 min(80,60)=<b>60</b> point。比赛结束后，你的 80 point 被夺走 60（剩余 20 转入你的蓄奖池），对手的 60 + 夺来的 60 = 120 point 全部转入对手的蓄奖池。</p>
+      <div class="tip">💡 无论输赢，你的 point 最终都会进入<b>蓄奖池</b>——赢了拿更多，输了拿剩余的。</div>
+      <h3>⚡ 第 2 局 ×1.5 倍率</h3>
+      <p>每天第 2 局的 point 转移量 <b class="highlight">乘以 1.5</b>。这是单局收益最高的一场！</p>
+      <p><b>例 1（你赢）</b>：如上，你 point=80 赢对手 point=60 → 夺取 60 × 1.5 = <b>90 point</b>。</p>
+      <p><b>例 2（你输）</b>：你 point=80 输给对手 point=60 → 对手夺取 60 × 1.5 = <b>90 point</b>。同样被放大！</p>
+      <div class="tip">🧠 第 2 局 ×1.5 是一把双刃剑——赢了大赚，输了也大亏。以及蓄奖池可以为负数。</div>
+      <h3>疲劳机制</h3>
+      <ul>
+        <li>角斗士<b>连续三天出战</b>，HP 逐日恶化：<b>1.0 → 0.8 → 0.6</b></li>
+        <li>中间休息一天再出战，HP 会<b>恢复一级</b>：例如第一天出战后 HP=0.8，第二天休息，第三天出战 → HP 恢复到 <b>0.9</b></li>
+        <li>同一天<b>不能重复使用</b>同一名角斗士</li>
+      </ul>
+      <div class="tip">🔄 <b>每天结束后</b>：双方的角斗士会被释放。第二天系统会重新从 20 名角斗士中<b>随机抽取 9 名</b>进入新的拍卖池——所以每天的阵容都是全新的，昨天的优势不会带到今天。</div>
+    `
+  },
+  // dot-5: 奖励与结算
+  5: {
+    title: "每日奖励与最终结算 —— 如何笑到最后",
+    body: `
+      <p>坚持了三天，来看看最终的胜负如何决出。</p>
+      <h3>每日胜者奖励</h3>
+      <p>每天 3 局结束后，胜场多的一方为<b>当日胜者</b>，可将蓄奖池兑换为游戏币：</p>
+      <ul>
+        <li>蓄奖池 ≤ 0 → <b>不兑换</b></li>
+        <li>蓄奖池 &lt; 50 → <b>全部兑换</b>为游戏币</li>
+        <li>蓄奖池 ≥ 50 → 只兑换 <b>50</b> 游戏币（封顶）</li>
+      </ul>
+      <p>平局则双方都不兑换。蓄奖池中剩余的 point 留到第二天。</p>
+      <h3>最终结算（3 天后）</h3>
+      <p>3 天结束后，蓄奖池中的 point <b>1:1 兑换为游戏币</b>，加上剩余游戏币 = 总财富。总财富更多的一方<b>最终获胜</b>。</p>
+      <div class="tip">🎯 <b>策略忠告</b><br>
+      • 如果以赢钱为目的，建议准备上纸和笔<br>
+      • 目前游戏的每个环节均不限时间，可充分思考后再做决定<br>
+      • 观察对手的出价模式，建立对手模型<br>
+      • 估计对手的出价范围，游戏币范围，知道哪些角斗士情报，都非常重要</div>
+    `
+  }
+};
+
+const params = new URLSearchParams(window.location.search);
+const step = parseInt(params.get("step")) || 2;
+
+if (STEPS[step]) {
+  const s = STEPS[step];
+  document.getElementById("content").innerHTML = `
+    <h2>${s.title}</h2>
+    <div class="subtitle">规则参考 · 第 ${step} 部分</div>
+    ${s.body}
+  `;
+  document.title = s.title;
+} else {
+  document.getElementById("content").innerHTML = '<p style="text-align:center;color:var(--dim)">未找到该规则页面</p>';
+}
+</script>
+</body>
+</html>
