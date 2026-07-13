@@ -272,6 +272,48 @@ def run_auction_phase(player_a_agent, player_b_agent,
             if bid_b is None:
                 bid_b = 0
 
+            # ── 余额校验：出价超过当前游戏币时通知玩家重新出价 ──
+            _BALANCE_RETRIES = 2
+            for _p_agent, _p, _bid_key in [
+                (player_a_agent, player_a, 'a'),
+                (player_b_agent, player_b, 'b'),
+            ]:
+                _bid = bid_a if _bid_key == 'a' else bid_b
+                if _bid > 0 and _bid > _p.chips:
+                    for _br in range(_BALANCE_RETRIES):
+                        if _p.chips < STARTING_PRICE:
+                            _hint = (f"你的游戏币只剩 {_p.chips}，不足以支付起拍价 {STARTING_PRICE}。"
+                                     f"请出价 0（弃权）。")
+                        else:
+                            _hint = (f"你的游戏币只有 {_p.chips}，不足支付出价 {_bid}。"
+                                     f"请重新出价，不超过 {_p.chips}。")
+                        set_thread_player(_p.player_name)
+                        _retry_resp = _p_agent.invoke(
+                            f"【余额不足警告 - 第{_br+1}/{_BALANCE_RETRIES}次重试】{_hint}\n"
+                            f"请在回复末尾单独一行输出 <bid>金额</bid>。",
+                            allow_tools=False,
+                        )
+                        logger.log_agent_message(_p.player_name, f"auction_r{round_num}_balance_retry{_br+1}", _retry_resp)
+                        _new_bid = _parse_bid(_retry_resp)
+                        if _new_bid is not None:
+                            if _bid_key == 'a':
+                                bid_a = _new_bid
+                            else:
+                                bid_b = _new_bid
+                            _bid = _new_bid
+                            if _bid <= _p.chips:
+                                break  # 新出价合法
+                    else:
+                        # 重试耗尽，强制截断到余额；若截断后低于起拍价则设为 0
+                        _capped = min(_bid, _p.chips)
+                        if _capped < STARTING_PRICE:
+                            _capped = 0
+                        if _bid_key == 'a':
+                            bid_a = _capped
+                        else:
+                            bid_b = _capped
+                        print(f"    ⚠ {_p.player_name} 余额不足重试耗尽，出价 {_bid} → {_capped}")
+
             print(f"    {player_a.player_name} 暗标: {bid_a} 币  |  {player_b.player_name} 暗标: {bid_b} 币")
             if viz:
                 viz.emit("auction_bid", {"bid_a": bid_a, "bid_b": bid_b})
@@ -1835,6 +1877,34 @@ def run_human_vs_ai_experiment(visualizer=None, human_sync=None):
                                 break
                     if bid_ai is None:
                         bid_ai = 0
+
+                    # 余额校验：AI 出价超过当前游戏币时通知重新出价
+                    if bid_ai > 0 and bid_ai > ai.chips:
+                        for _br in range(2):
+                            if ai.chips < STARTING_PRICE:
+                                _hint = (f"你的游戏币只剩 {ai.chips}，不足以支付起拍价 {STARTING_PRICE}。"
+                                         f"请出价 0（弃权）。")
+                            else:
+                                _hint = (f"你的游戏币只有 {ai.chips}，不足支付出价 {bid_ai}。"
+                                         f"请重新出价，不超过 {ai.chips}。")
+                            set_thread_player(ai.player_name)
+                            _retry_resp = ai_agent.invoke(
+                                f"【余额不足警告 - 第{_br+1}/2次重试】{_hint}\n"
+                                f"请在回复末尾单独一行输出 <bid>金额</bid>。",
+                                allow_tools=False,
+                            )
+                            logger.log_agent_message(ai.player_name, f"auction_r{round_num}_balance_retry{_br+1}", _retry_resp)
+                            _new_bid = _parse_bid(_retry_resp)
+                            if _new_bid is not None:
+                                bid_ai = _new_bid
+                                if bid_ai <= ai.chips:
+                                    break
+                        else:
+                            _capped = min(bid_ai, ai.chips)
+                            if _capped < STARTING_PRICE:
+                                _capped = 0
+                            bid_ai = _capped
+                            print(f"    ⚠ {ai.player_name} 余额不足重试耗尽，出价 → {_capped}")
                 except Exception as e:
                     print(f"  ⚠ AI 出价失败（第{round_num}轮/重试{retry}）: {e}")
                     import traceback
