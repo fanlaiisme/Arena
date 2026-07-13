@@ -99,8 +99,8 @@ class ArenaAgent:
             # 无工具调用 → 返回文本回复
             if not msg.tool_calls or not allow_tools or not openai_tools:
                 self.message_history.append(
-                    {"role": "user", "content": user_message})
-                assistant_entry = {"role": "assistant", "content": msg.content or ""}
+                    {"role": "user", "content": user_message, "label": label})
+                assistant_entry = {"role": "assistant", "content": msg.content or "", "label": label}
                 if hasattr(msg, 'reasoning_content') and msg.reasoning_content:
                     assistant_entry["reasoning_content"] = msg.reasoning_content
                 self.message_history.append(assistant_entry)
@@ -154,8 +154,8 @@ class ArenaAgent:
         if thinking and self.logger:
             self.logger.log_thinking(self.agent_name, thinking)
         content = msg.content or ""
-        self.message_history.append({"role": "user", "content": user_message})
-        assistant_entry = {"role": "assistant", "content": content}
+        self.message_history.append({"role": "user", "content": user_message, "label": label})
+        assistant_entry = {"role": "assistant", "content": content, "label": label}
         if hasattr(msg, 'reasoning_content') and msg.reasoning_content:
             assistant_entry["reasoning_content"] = msg.reasoning_content
         self.message_history.append(assistant_entry)

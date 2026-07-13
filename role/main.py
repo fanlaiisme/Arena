@@ -1492,6 +1492,25 @@ def run_experiment(visualizer=None):
         memory_b.wait_all()
         print(f"  [记忆] 第{day}天记忆提取完成")
 
+        # ── 清理临时消息：删除拍卖/部署/反思环节的上下文 ──                                                                              
+        _DAILY_CLEANUP_LABELS = {                                                                                                         
+            "post_auction_analysis", "deploy_match1", "reflect_match1", "deploy_match23",                                                 
+        }                                                                                                                                 
+        def _cleanup_message_history(agent, name):                                                                                        
+            before = len(agent.message_history)                                                                                           
+            agent.message_history = [                                                                                                     
+                m for m in agent.message_history                                                                                          
+                if not (                                                                                                                  
+                    m.get("label", "").startswith("auction_round")                                                                        
+                    or m.get("label", "") in _DAILY_CLEANUP_LABELS                                                                        
+                )                                                                                                                         
+            ]                                                                                                                             
+            after = len(agent.message_history)                                                                                            
+            print(f"  [清理] {name}: {before} → {after} 条消息 (删除 {before - after})")                                                  
+                                                                                                                                          
+        _cleanup_message_history(player_a_agent, player_a.player_name)                                                                    
+        _cleanup_message_history(player_b_agent, player_b.player_name)                                                                                                                                     
+
         logger.log_state_snapshot(
             day, player_a.summary(), player_b.summary(),
         )
