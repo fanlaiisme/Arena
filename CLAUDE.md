@@ -191,15 +191,15 @@ Bomb lifecycle: `THROW` (parabolic arc) → `PRIMED` (countdown with warning cir
 
 ## Role Experiment
 
-Two active entry points, plus a web wrapper:
+Three entry points:
 
 | Entry point | Command | Description |
 |-------------|---------|-------------|
-| **`role/main.py`** (primary) | `.venv/bin/python role/main.py` | No-Bob variant: two AI gamblers with pure text `<bid>`/`<deploy>` tags; used by web dashboard |
-| **`role/test.py`** (legacy) | `.venv/bin/python role/test.py` | With Bob: three characters, tool-calling agents, LangChain tools |
-| **`role/web_main.py`** | `.venv/bin/python role/web_main.py` | FastAPI server (port 8000) wrapping `main.py` in a background thread, SSE streaming to browser |
+| **`role/main.py`** (primary) | `.venv/bin/python role/main.py` | AI vs AI: two gamblers, 3-day loop, pure text `<bid>`/`<deploy>` tags, visualizer hooks |
+| **`role/test.py`** (stats reporter) | `.venv/bin/python role/test.py [log]` | **实验统计报告**：解析 JSONL 日志，输出 M7 游戏币估计准确率 + M1-M6 全维度打分 |
+| **`role/web_main.py`** | `.venv/bin/python role/web_main.py` | FastAPI server (port 8000) wrapping `main.py` in a background thread, SSE streaming |
 
-The old `role/peter.py` and `role/nerd.py` are **legacy** — not used by either active entry point. `Gambler` class in `role/gambler.py` replaces them.
+The old `role/peter.py` and `role/nerd.py` are **legacy**. `Gambler` class in `role/gambler.py` replaces them.
 
 Uses DeepSeek API (`deepseek-v4-flash`). Config in [role/config.py](role/config.py) loads `.env`.
 
@@ -207,20 +207,40 @@ Uses DeepSeek API (`deepseek-v4-flash`). Config in [role/config.py](role/config.
 
 | File | Purpose |
 |------|---------|
-| [role/main.py](role/main.py) | **Primary experiment runner** — no Bob, 3-day loop, text-parsing agents, visualizer hooks |
-| [role/test.py](role/test.py) | Legacy experiment with Bob — tool-calling agents, 3-round loop |
+| [role/main.py](role/main.py) | **Primary experiment runner** — AI vs AI and Human vs AI modes, text-parsing agents, visualizer |
+| [role/test.py](role/test.py) | **统计报告脚本** — 解析 experiment_*.log，生成 M1-M7 打分表 + 游戏币估计准确率表 |
 | [role/gambler.py](role/gambler.py) | `Gambler` class + two system prompts (with-Bob and no-Bob, ~230 lines) |
-| [role/agents.py](role/agents.py) | `ArenaAgent` — wraps a character + OpenAI client + tools + message_history |
+| [role/agents.py](role/agents.py) | `ArenaAgent` — OpenAI client wrapper + message_history + `on_response` callback + `label` 参数 |
 | [role/squad.py](role/squad.py) | `Squad` + `SquadMember` — 3-gladiator roster with fatigue, HP scaling, point/pool |
 | [role/auction.py](role/auction.py) | `AuctionSession` — sealed-bid auction: 9 from 20 gladiators, auto-fill, bid compare |
 | [role/role_base.py](role/role_base.py) | `Role` base class (assets, chips, reward_pool), `Gambler` parent |
-| [role/tools.py](role/tools.py) | `GameState` dataclass + LangChain `@tool` functions (Bob tools, player tools) |
+| [role/tools.py](role/tools.py) | `GameState` dataclass + LangChain `@tool` functions |
 | [role/match_runner.py](role/match_runner.py) | `run_headless_match()` — headless Arena fight via `SDL_VIDEODRIVER=dummy` |
-| [role/evaluator.py](role/evaluator.py) | `Evaluator` — M1-M6 analysis (rule hallucination, factual accuracy, strategy, etc.) |
+| [role/evaluator.py](role/evaluator.py) | `Evaluator` — M1-M7 评估（规则幻觉/数字幻觉/策略质量/经济理性/信息利用/对手建模/游戏币估计） |
 | [role/logger.py](role/logger.py) | `ExperimentLogger` — thread-safe JSONL logging to `role/output/` |
-| [role/config.py](role/config.py) | DeepSeek client config, model name, `EXTRA_BODY` / `EXTRA_BODY_THINKING` |
+| [role/config.py](role/config.py) | DeepSeek client, `MEMORY_API_KEY`, thinking mode `EXTRA_BODY` |
 | [role/visualizer.py](role/visualizer.py) | `Visualizer` — thread-safe `asyncio.Queue` event emitter for SSE |
 | [role/web_main.py](role/web_main.py) | FastAPI app — serves dashboard, reflections, SSE, API |
+| [role/memory_subagent.py](role/memory_subagent.py) | **记忆模块** — `MemorySubagent` 后台渐进式提取，独立 API 调用 + read/edit 工具 |
+| [role/memory_tools.py](role/memory_tools.py) | LangChain @tool: `read_memory` + `edit_memory`（区分填充空模板/修改已有内容） |
+| [role/memory/](role/memory/) | 记忆目录：`opponent_model.md` + `gladiator_knowledge.md` + `day{N}.md`（每玩家独立） |
+
+### Evaluator dimensions (M1-M7)
+
+| 维度 | 方法 | 方式 | 说明 |
+|------|------|------|------|
+| **M1 规则幻觉** | `evaluate_rule_compliance()` | LLM | 检测是否误解拍卖暗标、奖励池、属性克制等规则 |
+| **M2 数字幻觉** | `evaluate_factual_accuracy()` | LLM | 检测是否虚构胜率、花费、对手币量等数字 |
+| **M3 策略质量** | `evaluate_strategy_quality()` | LLM | 拍卖+部署+疲劳+point管理，**含×1.5杠杆策略教育** |
+| **M4 经济理性** | `evaluate_economic_rationality_v2()` | 程序化 | 花费占比、弃权率、死钱比例、破产风险 |
+| **M5 信息利用** | `evaluate_information_utilization()` | LLM | 预览信息利用、匿名排名表填写质量 |
+| **M6 对手建模** | `evaluate_opponent_modeling_v2()` | LLM | 对手出价/部署模式预测准确度 |
+| **M7 游戏币估计** | `evaluate_chip_estimation()` | 程序化(正则) | 从 `##对手游戏币估计在**N~M**之间##` 提取，与 ground truth 比对 |
+
+M7 正则三级匹配（`evaluator.py:894-900`）：
+1. `^##对手游戏币估计在\*\*(\d+)\s*[~\-–—至到]\s*(\d+)\*\*之间##\s*$` — 独立成行
+2. `##对手游戏币估计在\*\*(\d+)\s*[~\-–—至到]\s*(\d+)\*\*之间##` — 有 `##` 包裹
+3. `对手游戏币估计在\*\*(\d+)\s*[~\-–—至到]\s*(\d+)\*\*之间` — 宽松兜底
 
 ### `main.py` experiment flow (3-day loop)
 
@@ -258,13 +278,17 @@ Phase 4: Daily winner reward
   ↓
 Phase 5: Day summary reflection (parallel, thinking mode)
   - Players fill anonymous ranking table + estimate opponent chips
+  - Output format: ##对手游戏币估计在**下限~上限**之间##
   - Stored in Visualizer for reflections.html
   ↓
-Phase 6: Evaluation (M1-M6)
-  - Rule hallucination, factual accuracy, strategy quality, economic rationality,
-    information utilization, opponent modeling
+Phase 6: Evaluation (M1-M7)
+  - M1 rule hallucination, M2 factual accuracy, M3 strategy quality,
+    M4 economic rationality, M5 information utilization, M6 opponent modeling,
+    M7 chip estimation (programmatic regex)
   ↓
 Day advancement: squad.next_day() (fatigue recovery), deployments cleared
+  ↓
+Memory extraction: wait_all() — 确保两个 MemorySubagent 完成当天记忆写入
 ```
 
 After 3 days: all `point_pool` + `reward_pool` → chips (1:1), compare totals for winner.
@@ -283,17 +307,44 @@ Three currencies on each player:
 
 **Low-chips notification**: When one player drops below 50 chips (can't bid), the other player gets an explicit system notification.
 
-### `test.py` vs `main.py`
+### `test.py` — 统计报告脚本
 
-| Aspect | `test.py` (with Bob) | `main.py` (no Bob) |
-|--------|---------------------|-------------------|
-| Bob agent | Yes, with data tools | No |
-| Agent interaction | Tool-calling (`auction_bid`, `deploy_first_match`, etc.) | Pure text parsing (`<bid>`, `<deploy>` tags) |
-| System prompt | Short, assumes Bob consultation | ~230-line `SYSTEM_PROMPT_NO_BOB` |
-| Visualizer support | No | Yes (`viz.emit()` throughout) |
-| Parse retries | N/A (tools validate) | Up to 3 retries for missing tags |
-| Low-chips handling | None | Explicit opponent notification |
-| Daily preview count | Constant 5 | Variable 5/4/3 per day |
+`test.py` 已重写为实验统计报告工具，不再运行 Bob 实验：
+
+```bash
+.venv/bin/python role/test.py [日志文件路径]
+# 不带参数时自动选取 role/output/ 下最新的 experiment_*.log
+```
+
+输出三张表：
+| 表 | 内容 |
+|----|------|
+| 表1 | M7 对手游戏币估计准确率（逐天：估计范围 vs 真实值 + 命中/偏离 + 得分） |
+| 表2 | M1-M6 全维度打分明细（按玩家×天数×维度） |
+| 表3 | 各玩家按维度汇总平均分 |
+
+### Memory Module（记忆模块）
+
+每个 AI 玩家拥有独立的记忆目录 `role/memory/{player_name}/`，包含三个 markdown 文件：
+
+| 文件 | 类型 | frontmatter | 内容 |
+|------|------|-------------|------|
+| `opponent_model.md` | 跨天持久 | `type: opponent-model` | 对手出价模式、部署偏好、关键观察 |
+| `gladiator_knowledge.md` | 跨天持久 | `type: gladiator-knowledge` | 胜率排名推测表、实战表现记录 |
+| `day{N}.md` | 每日笔记 | `type: daily-memory` | 当天概述、教训、对手观察、明日策略 |
+
+**工作流**：
+1. `ArenaAgent.invoke()` 每次返回时 → `on_response(label, content)` 回调 → `MemorySubagent.submit()`
+2. Subagent 后台独立 API 调用（无状态），使用 `read_memory` / `edit_memory` 工具渐进更新 md 文件
+3. 每天结束 → `wait_all()` 阻塞等待所有记忆写入完成
+4. 下一天开始 → `_inject_memory()` 将三个 md 文件注入 agent 的 `message_history`
+
+**关键文件**：
+| 文件 | 说明 |
+|------|------|
+| [role/memory_subagent.py](role/memory_subagent.py) | `MemorySubagent` 类：ThreadPoolExecutor 串行处理，最多 3 轮工具调用 |
+| [role/memory_tools.py](role/memory_tools.py) | `read_memory` + `edit_memory` LangChain @tool，edit 返回值区分"填充空模板"/"修改已有内容" |
+| [role/config.py](role/config.py) | `MEMORY_API_KEY`（从 .env 第二行读取，回退主 key）、`MEMORY_MODEL_NAME` |
 
 ### Key constants
 
@@ -311,6 +362,8 @@ Three currencies on each player:
 - Tool calling loop (max 5 iterations) for test.py agents
 - `allow_tools=False` forces text-only reply (used in main.py's text-parsing mode)
 - `extra_body` controls DeepSeek thinking mode per-call
+- `label` 参数：阶段标签，触发 `on_response` 回调 → 记忆 subagent
+- `on_response` 回调：每次 invoke 返回时触发，用于渐进式记忆提取
 
 ---
 

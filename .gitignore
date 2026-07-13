@@ -5,3 +5,5 @@ output/
 pyproject.toml
 uv.lock
 demand.txt
+memory_logs/
+.claude/

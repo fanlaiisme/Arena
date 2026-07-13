@@ -565,7 +565,20 @@ class Evaluator:
                                    deployments: dict[int, str],
                                    match_results: list[dict]) -> dict:
         """评估拍卖策略、部署策略、第2局×1.5利用、疲劳管理等。综合评分1-10。"""
-        deploy_text = ", ".join(f"第{k}局:{v}" for k, v in sorted(deployments.items())) if deployments else "（无部署）"
+        # 从 auction_results 中提取角斗士的 point 值，注入部署文本
+        gladiator_points = {}
+        try:
+            auction_data = json.loads(auction_results) if isinstance(auction_results, str) else auction_results
+            for g in auction_data.get("my_gladiators", []):
+                gladiator_points[g["char_id"]] = g.get("point", 0)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        deploy_parts = []
+        for k, v in sorted(deployments.items()):
+            pt = gladiator_points.get(v, "?")
+            deploy_parts.append(f"第{k}局:{v}(point={pt})")
+        deploy_text = ", ".join(deploy_parts) if deploy_parts else "（无部署）"
 
         matches_text = ""
         for m in (match_results or []):
@@ -599,16 +612,36 @@ class Evaluator:
 【全天复盘】
 {day_summary[:4000]}
 
-【规则提醒】
+【规则与策略指南 —— 请仔细阅读后再评估！】
+
+基本规则：
 - 每天第2局夺取量×1.5——这是最重要的策略杠杆
 - 疲劳角斗士HP降低：连续2天=80%，连续3天=60%
 - 同一天不能用同一角斗士两次
 - 没有属性相克
 
+⚠️ 第2局×1.5 的策略含义（评估者必读）：
+- 第2局的 point 转移量是第1、3局的 1.5 倍，因此第2局是"关键局"。
+- **把最强（point最高）的角斗士放在第2局，是经典的田忌赛马策略**：
+  用弱角斗士打第1局（可输），用最强角斗士打第2局（力争赢×1.5），
+  用中等角斗士打第3局。这是数学上最优的部署方式。
+- **重要：第1局输了不代表部署失误！** 如果玩家把高point角斗士留给第2局，
+  第1局用低point角斗士试探或消耗对手强角斗士，这恰恰是合理策略。
+- 评估部署时，请计算**期望point转移**：假设赢，第2局收益 = 角斗士point × 1.5；
+  假设输，损失 = 角斗士point。综合对比各局的期望收益，而不是只看胜负场数。
+- **防守型策略同样合理**：当玩家阵容整体弱于对手（角斗士胜率普遍偏低、疲劳严重）时，
+  把低point值的角斗士故意放在第2局，是一种聪明的止损策略——因为第2局×1.5会放大损失，
+  用低point角斗士去"接"对手第2局的强角斗士，可以最小化point损失。
+  这种情况下，第2局放最弱角斗士不是失误，而是劣势下的最优解。
+- 只有在以下情况才算部署失误：
+  ① 把最强的两个角斗士都放在了第1局和第3局，第2局放了最弱的（×1.5被浪费）
+  ② 玩家自己承认部署有误
+  ③ 出于疲劳考虑以外的原因，让同一个角斗士连续出战多天导致疲劳叠加
+
 请综合评估该玩家的策略质量（1-10分），从以下维度分析：
 
 1. **拍卖策略**：出价是否理性？是否合理利用预览信息？是否有明确的估值逻辑？
-2. **部署策略**：第1/2/3局的角斗士安排是否合理？是否利用了第2局×1.5的杠杆？
+2. **部署策略**：是否将最强角斗士部署在×1.5的第2局？第1局用弱角斗士是否是为了给第2局留王牌？弱角斗士输第1局而强角斗士赢第2局=优秀策略，不是失误。反过来，阵容劣势时把低point角斗士放第2局来止损，同样是合理策略。
 3. **疲劳管理**：是否妥善安排了疲劳角斗士的休息和出战？
 4. **Point管理**：是否注意保护高point角斗士？是否尝试夺取对方高point？
 5. **学习与适应**：是否从当天结果中学习并调整策略？
@@ -850,7 +883,7 @@ class Evaluator:
                                   actual_opponent_chips: int) -> dict:
         """程序化检测：玩家复盘中的对手游戏币估计是否准确。
 
-        从复盘文本中提取估计范围（如"600~700"或"约 650"），
+        从复盘文本中提取 "##对手游戏币估计在**下限~上限**之间##" 格式的估计范围，
         与真实对手游戏币（ground truth）比对，判断是否命中。
         """
         if not reflection_text:
@@ -858,18 +891,12 @@ class Evaluator:
                     "hit": None, "score": 0,
                     "summary": f"{player_name} 第{day}天无复盘文本，跳过游戏币估计检测"}
 
-        # 匹配模式：对手游戏币估计：下限~上限 或 对手游戏币估计：约 NNN
+        # 三种匹配规则，围绕 PROMPT_DAY_SUMMARY 要求的输出格式：
+        #   ##对手游戏币估计在**下限~上限**之间##
         patterns = [
-            # "对手游戏币估计：600~700" 或 "对手游戏币估计: 600~700"
-            r'对手游戏币估[算计][：:]\s*[约大约]?\s*(\d+)\s*[~\-–—至到]\s*(\d+)',
-            # "约 600~700 游戏币"
-            r'[约大约]?\s*(\d+)\s*[~\-–—至到]\s*(\d+)\s*游戏币',
-            # "估计对手.*?(\d+)\s*[~\-–—至到]\s*(\d+)"
-            r'估计对手.*?(\d+)\s*[~\-–—至到]\s*(\d+)',
-            # "对手大概还有 600 左右"
-            r'对手[大大概还][约概还有]*\s*(\d+)\s*[左以右内]',
-            # "对手.*?(\d+).*?游戏币" (single number)
-            r'对手.*?[约大约]?\s*(\d+)\s*游戏币[^\+]',
+            r'##对手游戏币估计在\*\*(\d+)\s*[~\-–—至到]\s*(\d+)\*\*之间##',
+            r'##对手游戏币估计在\*\*(\d+)\s*[~\-–—至到]\s*(\d+)\*\*之间##\s*',
+            r'对手游戏币估计在\*\*(\d+)\s*[~\-–—至到]\s*(\d+)\*\*之间',
         ]
 
         estimated_low = None
@@ -878,15 +905,8 @@ class Evaluator:
         for pattern in patterns:
             m = re.search(pattern, reflection_text)
             if m:
-                groups = m.groups()
-                if len(groups) == 2:
-                    estimated_low = int(groups[0])
-                    estimated_high = int(groups[1])
-                elif len(groups) == 1:
-                    # Single number → treat as ±25 range
-                    mid = int(groups[0])
-                    estimated_low = max(0, mid - 25)
-                    estimated_high = mid + 25
+                estimated_low = int(m.group(1))
+                estimated_high = int(m.group(2))
                 break
 
         if estimated_low is None:

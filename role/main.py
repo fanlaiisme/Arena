@@ -25,6 +25,7 @@ from role.evaluator import Evaluator
 from role.auction import AuctionSession, STARTING_PRICE, AUTO_FILL_PRICE, MAX_BID_CAP
 from role.config import EXTRA_BODY_THINKING
 from role.agents import ArenaAgent
+from role.memory_subagent import MemorySubagent
 
 def _get_available_gladiators() -> list[dict]:
     from characters import CHARACTERS
@@ -221,11 +222,11 @@ def run_auction_phase(player_a_agent, player_b_agent,
             # 暗标出价（纯文本解析，无工具）
             def _invoke_a():
                 set_thread_player(player_a.player_name)
-                return player_a_agent.invoke(prompt_a, allow_tools=False)
+                return player_a_agent.invoke(prompt_a, allow_tools=False, label=f"auction_round{round_num}")
 
             def _invoke_b():
                 set_thread_player(player_b.player_name)
-                return player_b_agent.invoke(prompt_b, allow_tools=False)
+                return player_b_agent.invoke(prompt_b, allow_tools=False, label=f"auction_round{round_num}")
 
             with ThreadPoolExecutor(max_workers=2) as executor:
                 future_a = executor.submit(_invoke_a)
@@ -492,7 +493,8 @@ def run_deployment_phase(gambler_agent, gambler: Gambler, opponent: Gambler,
             f"必须输出此标签，否则视为未部署。当前需要部署第二个和第三个角斗士。"
         )
 
-    response = gambler_agent.invoke(deploy_msg, allow_tools=False)
+    slots_label = "deploy_match1" if slots_list == [1] else "deploy_match23"
+    response = gambler_agent.invoke(deploy_msg, allow_tools=False, label=slots_label)
     logger.log_agent_message(gambler.player_name, f"deployment_{slots_str}", response)
 
     # 从文本中解析部署
@@ -714,7 +716,7 @@ def _reflect_player(player_agent, player: Gambler, opponent: Gambler,
         match_info=match_info,
         opponent=opponent.player_name,
     )
-    response = player_agent.invoke(msg, allow_tools=False)
+    response = player_agent.invoke(msg, allow_tools=False, label=f"reflect_{stage}")
     logger.log_agent_message(player.player_name, f"reflect_{stage}", response)
     return response
 
@@ -758,8 +760,8 @@ PROMPT_DAY_SUMMARY = """第{day}天比赛全部结束，以下是今日复盘。
 
     **重要提醒：对手作为拍卖输的一方时，系统不显示他的出价，请把该因素考虑进去，估计对手的下限**
 
-   输出格式：
-   对手游戏币估计：下限~上限
+   严格遵从以下输出格式：
+   ##对手游戏币估计在**下限~上限**之间##
    推理依据：...
 
 3. 【明天策略】基于以上分析，明天的总体策略规划。
@@ -919,6 +921,55 @@ def _estimate_opponent_chips(opp, auction) -> str:
     return f"约 {est_low}~{est_high} 游戏币"
 
 
+def _inject_memory(player_name: str, agent: ArenaAgent, day: int,
+                   memory_subagent: MemorySubagent):
+    """每天开始时注入前一天的记忆到 agent 上下文。"""
+    if day == 1:
+        return  # 第1天没有记忆
+
+    base = memory_subagent.memory_dir
+    parts = []
+
+    # 1. 对手模型（跨天累积）
+    opponent_path = base / "opponent_model.md"
+    if opponent_path.exists():
+        body = opponent_path.read_text(encoding="utf-8")
+        parts.append(_extract_md_body(body))
+
+    # 2. 角斗士认知（跨天累积）
+    gladiator_path = base / "gladiator_knowledge.md"
+    if gladiator_path.exists():
+        body = gladiator_path.read_text(encoding="utf-8")
+        parts.append(_extract_md_body(body))
+
+    # 3. 前一天笔记
+    prev_day_path = base / f"day{day-1}.md"
+    if prev_day_path.exists():
+        body = prev_day_path.read_text(encoding="utf-8")
+        parts.append(_extract_md_body(body))
+
+    if not parts:
+        return
+
+    body = "\n\n---\n\n".join(parts)
+    memory_msg = (
+        f"[系统记忆] 以下是你在前 {day-1} 天积累的经验，请在做决策时参考：\n\n{body}"
+    )
+    agent.message_history.append({"role": "user", "content": memory_msg})
+    print(f"  [记忆] 已注入 {player_name} 的历史记忆（{len(parts)} 个文件）")
+
+
+def _extract_md_body(md_text: str) -> str:
+    """提取 markdown 正文（去掉 YAML frontmatter）。"""
+    lines = md_text.split("\n")
+    if lines and lines[0].strip() == "---":
+        end = 1
+        while end < len(lines) and lines[end].strip() != "---":
+            end += 1
+        return "\n".join(lines[end+1:]).strip()
+    return md_text.strip()
+
+
 def run_experiment(visualizer=None):
     """运行无 Bob 精简版实验。
 
@@ -941,6 +992,22 @@ def run_experiment(visualizer=None):
     evaluator = Evaluator(logger=logger)
     player_a_agent = _create_no_bob_agent(player_a, logger=logger)
     player_b_agent = _create_no_bob_agent(player_b, logger=logger)
+
+    # ── 记忆模块初始化 ──
+    import os as _os
+    _memory_base = _os.path.join(_os.path.dirname(__file__), "memory")
+
+    # 重置记忆文件：清除上局残留，恢复模板状态
+    from role.memory_tools import reset_player_memories
+    reset_player_memories(player_a.player_name, f"{_memory_base}/{player_a.player_name}")
+    reset_player_memories(player_b.player_name, f"{_memory_base}/{player_b.player_name}")
+
+    memory_a = MemorySubagent(player_a.player_name, f"{_memory_base}/{player_a.player_name}", day=1)
+    memory_b = MemorySubagent(player_b.player_name, f"{_memory_base}/{player_b.player_name}", day=1)
+
+    # 设置回调：每次玩家 agent 产出完整输出，自动提交到记忆 subagent
+    player_a_agent.on_response = lambda label, content: memory_a.submit(label, content)
+    player_b_agent.on_response = lambda label, content: memory_b.submit(label, content)
 
     print("=" * 60)
     print("  Arena 新赌局 —— 3天×3局 拍卖竞技（无Bob）")
@@ -988,10 +1055,10 @@ def run_experiment(visualizer=None):
 请直接输出你的分析，本环节不需要使用工具。"""
 
     def _interpret_a():
-        return player_a_agent.invoke(rules_interpretation_prompt, allow_tools=False)
+        return player_a_agent.invoke(rules_interpretation_prompt, allow_tools=False, label="rules_interpretation")
 
     def _interpret_b():
-        return player_b_agent.invoke(rules_interpretation_prompt, allow_tools=False)
+        return player_b_agent.invoke(rules_interpretation_prompt, allow_tools=False, label="rules_interpretation")
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         future_a = executor.submit(_interpret_a)
@@ -1027,6 +1094,12 @@ def run_experiment(visualizer=None):
         print(f"\n{'='*60}")
         print(f"  第 {day} 天")
         print(f"{'='*60}")
+
+        # ── 记忆注入：每天开始前注入历史记忆 ──
+        memory_a.set_day(day)
+        memory_b.set_day(day)
+        _inject_memory(player_a.player_name, player_a_agent, day, memory_a)
+        _inject_memory(player_b.player_name, player_b_agent, day, memory_b)
 
         # Phase 0: 赛前角斗士胜率预览（每天数量不同，跨天不重复）
         logger.log_phase("preview", "start", day)
@@ -1094,9 +1167,9 @@ def run_experiment(visualizer=None):
         )
 
         def _analyze_a():
-            return player_a_agent.invoke(post_auction_msg_a, allow_tools=False)
+            return player_a_agent.invoke(post_auction_msg_a, allow_tools=False, label="post_auction_analysis")
         def _analyze_b():
-            return player_b_agent.invoke(post_auction_msg_b, allow_tools=False)
+            return player_b_agent.invoke(post_auction_msg_b, allow_tools=False, label="post_auction_analysis")
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             fa = executor.submit(_analyze_a)
@@ -1236,9 +1309,9 @@ def run_experiment(visualizer=None):
         msg_a = PROMPT_DAY_SUMMARY.format(day=day, player_info=summary_a)
         msg_b = PROMPT_DAY_SUMMARY.format(day=day, player_info=summary_b)
         def _summary_a():
-            return player_a_agent.invoke(msg_a, allow_tools=False, extra_body=EXTRA_BODY_THINKING)
+            return player_a_agent.invoke(msg_a, allow_tools=False, extra_body=EXTRA_BODY_THINKING, label="day_summary")
         def _summary_b():
-            return player_b_agent.invoke(msg_b, allow_tools=False, extra_body=EXTRA_BODY_THINKING)
+            return player_b_agent.invoke(msg_b, allow_tools=False, extra_body=EXTRA_BODY_THINKING, label="day_summary")
         with ThreadPoolExecutor(max_workers=2) as executor:
             fa = executor.submit(_summary_a)
             fb = executor.submit(_summary_b)
@@ -1412,6 +1485,12 @@ def run_experiment(visualizer=None):
             player_b.squad.next_day()
         player_a.deployments = {}
         player_b.deployments = {}
+
+        # ── 等待记忆 subagent 完成当天所有提取 ──
+        print(f"\n── 等待记忆提取完成 ──")
+        memory_a.wait_all()
+        memory_b.wait_all()
+        print(f"  [记忆] 第{day}天记忆提取完成")
 
         logger.log_state_snapshot(
             day, player_a.summary(), player_b.summary(),

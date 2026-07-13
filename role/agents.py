@@ -58,10 +58,18 @@ class ArenaAgent:
         self.client = get_client()
         self.logger = logger
         self.message_history: list[dict] = []  # OpenAI 格式的对话历史
+        self.on_response: callable | None = None  # 回调: (label, response_text) -> None
 
     def invoke(self, user_message: str, allow_tools: bool = True,
-               extra_body: dict | None = None) -> str:
-        """发送消息给此智能体并获取回复。"""
+               extra_body: dict | None = None, label: str = "") -> str:
+        """发送消息给此智能体并获取回复。
+
+        Args:
+            user_message: 用户消息
+            allow_tools: 是否允许工具调用
+            extra_body: 额外的 API 参数
+            label: 阶段标签，用于记忆 subagent 回调
+        """
         # 构建完整消息列表
         messages = [{"role": "system", "content": self.system_prompt}]
         messages.extend(self.message_history)
@@ -96,7 +104,9 @@ class ArenaAgent:
                 if hasattr(msg, 'reasoning_content') and msg.reasoning_content:
                     assistant_entry["reasoning_content"] = msg.reasoning_content
                 self.message_history.append(assistant_entry)
-                return msg.content or ""
+                result = msg.content or ""
+                self._fire_response(label, result)
+                return result
 
             # 有工具调用 → 追加 assistant 消息（含 reasoning_content）
             assistant_msg = {
@@ -149,7 +159,16 @@ class ArenaAgent:
         if hasattr(msg, 'reasoning_content') and msg.reasoning_content:
             assistant_entry["reasoning_content"] = msg.reasoning_content
         self.message_history.append(assistant_entry)
+        self._fire_response(label, content)
         return content
+
+    def _fire_response(self, label: str, result: str):
+        """触发回调（如果设置了）。"""
+        if self.on_response and label and result:
+            try:
+                self.on_response(label, result)
+            except Exception:
+                pass  # 回调不应影响主流程
 
     def _execute_tool(self, tool_name: str, args: dict) -> str:
         """执行工具调用并返回结果字符串。"""
