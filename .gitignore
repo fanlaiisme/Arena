@@ -7,5 +7,5 @@ uv.lock
 demand.txt
 memory_logs/
 .claude/
-memory/斑目貘/
-memory/夜神月/
+role/memory/斑目貘/
+role/memory/夜神月/
