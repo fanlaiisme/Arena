@@ -60,6 +60,9 @@ class GameState:
     pending_bob_reply: dict | None = None  # {"player_name": ..., "question": ...}
     pending_bob_bribe: dict | None = None  # {"player_name": ..., "amount": ..., "question": ...}
     current_player: str = ""   # 当前正在调用工具的玩家名
+    game_over: bool = False     # 破产等导致游戏提前结束
+    bankrupt_player: str = ""   # 破产方玩家名
+    winner_name: str = ""       # 破产时的胜者名
 
 
 _state: GameState | None = None
@@ -458,28 +461,69 @@ def auction_bid(amount: int = -1) -> str:
     )
 
 
-def _finalize_auction(state: GameState, old_pool_a: int = 0, old_pool_b: int = 0):
-    """拍卖结束后，为双方构建阵容。对系统补填的角斗士扣游戏币。"""
+def _finalize_auction(state: GameState, old_pool_a: int = 0, old_pool_b: int = 0) -> str | None:
+    """拍卖结束后，为双方构建阵容。对系统补填的角斗士扣游戏币。
+
+    Returns:
+        None: 正常完成
+        str: 破产方玩家名（游戏应立即结束）
+    """
+    bankrupt = None
     if state.player_a and state.auction.owner_a:
-        _charge_auto_assign(state.player_a, state.auction.owner_a, state.bob)
-        state.player_a.build_squad(state.auction.owner_a)
-        if state.player_a.squad:
-            state.player_a.squad.point_pool += old_pool_a
-    if state.player_b and state.auction.owner_b:
-        _charge_auto_assign(state.player_b, state.auction.owner_b, state.bob)
-        state.player_b.build_squad(state.auction.owner_b)
-        if state.player_b.squad:
-            state.player_b.squad.point_pool += old_pool_b
+        if not _charge_auto_assign(state.player_a, state.auction.owner_a, state.bob):
+            bankrupt = state.player_a.player_name
+        else:
+            state.player_a.build_squad(state.auction.owner_a)
+            if state.player_a.squad:
+                state.player_a.squad.point_pool += old_pool_a
+    if bankrupt is None and state.player_b and state.auction.owner_b:
+        if not _charge_auto_assign(state.player_b, state.auction.owner_b, state.bob):
+            bankrupt = state.player_b.player_name
+        else:
+            state.player_b.build_squad(state.auction.owner_b)
+            if state.player_b.squad:
+                state.player_b.squad.point_pool += old_pool_b
+    if bankrupt:
+        _execute_bankruptcy(state, bankrupt)
+    return bankrupt
 
 
-def _charge_auto_assign(player, owner_list: list[dict], bob):
+def _execute_bankruptcy(state: GameState, bankrupt_name: str):
+    """执行破产清算：破产方清零，胜方获得 1600 游戏币，游戏结束。"""
+    if state.player_a and state.player_a.player_name == bankrupt_name:
+        bankrupt, winner = state.player_a, state.player_b
+    else:
+        bankrupt, winner = state.player_b, state.player_a
+
+    bankrupt.chips = 0
+    bankrupt.reward_pool = 0
+    winner_name = winner.player_name if winner else "对手"
+
+    winner.chips = 1600
+    winner.reward_pool = 0
+
+    state.game_over = True
+    state.bankrupt_player = bankrupt_name
+    state.winner_name = winner_name
+
+
+def _charge_auto_assign(player, owner_list: list[dict], bob) -> bool:
     """对自动分配的角斗士（auto_filled 标记）按 point 扣游戏币。
-    优先扣 chips，不够从 reward_pool 补扣。"""
+    优先扣 chips，不够从 reward_pool 补扣。
+
+    Returns:
+        True: 所有扣款成功
+        False: 游戏币 + 奖励池不足以支付，触发破产
+    """
     for entry in owner_list:
         if entry.get("auto_filled"):
             amount = entry.get("point", 0)
             if amount <= 0:
                 continue
+            # 破产检查：游戏币 + 奖励池 是否足够支付
+            total = player.chips + player.reward_pool
+            if total < amount:
+                return False
             if player.spend_chips(amount):
                 if bob is not None:
                     bob.arena_chips += amount
@@ -491,6 +535,7 @@ def _charge_auto_assign(player, owner_list: list[dict], bob):
                 player.reward_pool -= shortfall
                 if bob is not None:
                     bob.arena_chips += amount
+    return True
 
 
 @tool

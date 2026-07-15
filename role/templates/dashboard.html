@@ -378,7 +378,12 @@ function handle(type, d) {
       document.getElementById("auction-id").textContent = "";
       document.getElementById("auction-card").style.display = "block";
       // 结果区
-      appendResult(`<h3>🏆 ${d.winner} 最终胜出！</h3>`);
+      if (d.reason === "bankruptcy") {
+        appendResult(`<h3>💸 游戏提前结束！</h3>`);
+        appendResult(`<span style="color:#ff6b6b">${d.msg}</span>`);
+      } else {
+        appendResult(`<h3>🏆 ${d.winner} 最终胜出！</h3>`);
+      }
       appendResult(`${playerAName}: ${d.chips_a} 币 | ${playerBName}: ${d.chips_b} 币`);
       updateStatus(d.chips_a, d.chips_b, 3, 3);
       document.getElementById("btn-start").disabled = false;

@@ -709,6 +709,9 @@ function handle(type, d) {
       document.getElementById("auction-id").textContent = "";
       document.getElementById("auction-card").style.display = "block";
       appendResult(`<h3>${won ? '🏆 你最终胜出！' : '😔 对方最终胜出'}</h3>`);
+      if (d.reason === "bankruptcy") {
+        appendResult(`<span style="color:#ff6b6b">💸 ${d.msg}</span>`);
+      }
       appendResult(`你: ${d.chips_a} 币 | 对方: ${d.chips_b !== undefined ? d.chips_b + ' 币' : '???'}`);
       break;
 
