@@ -43,6 +43,13 @@
   }
   #btn-start:hover { opacity: .85; }
   #btn-start:disabled { opacity: .4; cursor: not-allowed; }
+  #btn-sound, #btn-sound-tutorial {
+    background: #334155; color: var(--text); border: 1px solid #475569;
+    padding: 6px 10px; border-radius: 8px; font-size: 16px; cursor: pointer;
+    line-height: 1; transition: background .2s; flex-shrink: 0;
+  }
+  #btn-sound:hover, #btn-sound-tutorial:hover { background: #475569; }
+  #btn-sound.muted, #btn-sound-tutorial.muted { color: #ef4444; }
 
   /* 规则折叠面板 */
   #rules-collapse {
@@ -430,6 +437,9 @@
 </head>
 <body>
 
+<!-- 背景音乐 -->
+<audio id="bgm" src="/audio/Arena竞技场背景音乐.mp3" loop autoplay></audio>
+
 <!-- 赛前教程遮罩 -->
 <div id="rules-overlay">
   <div class="tutorial-container">
@@ -446,6 +456,7 @@
       <span class="step-dot" id="dot-4">5</span>
       <span class="step-line" id="line-4"></span>
       <span class="step-dot" id="dot-5">6</span>
+      <button id="btn-sound-tutorial" onclick="toggleSound()" title="切换背景音乐" style="margin-left:16px">🔊</button>
     </div>
     <!-- 内容区（JS 动态填充） -->
     <div class="tutorial-content" id="tutorial-content"></div>
@@ -519,6 +530,7 @@
   <span id="phase-label">等待开始</span>
   <span id="day-label"></span>
   <button id="btn-start" onclick="startGame()" style="display:none">▶ 开始游戏</button>
+  <button id="btn-sound" onclick="toggleSound()" title="切换背景音乐" style="display:none">🔊</button>
 </div>
 
 <!-- 主区域 -->
@@ -1441,6 +1453,21 @@ function truncate(text, len) {
   return text && text.length > len ? text.slice(0, len) + "..." : text;
 }
 
+function toggleSound() {
+  const bgm = document.getElementById("bgm");
+  const btnTop = document.getElementById("btn-sound");
+  const btnTut = document.getElementById("btn-sound-tutorial");
+  if (!bgm) return;
+  if (bgm.paused || bgm.muted) {
+    bgm.muted = false;
+    bgm.play().catch(() => {});
+    [btnTop, btnTut].forEach(b => { if (b) { b.textContent = "🔊"; b.classList.remove("muted"); } });
+  } else {
+    bgm.muted = true;
+    [btnTop, btnTut].forEach(b => { if (b) { b.textContent = "🔇"; b.classList.add("muted"); } });
+  }
+}
+
 async function resetGame(toHome) {
   if (!confirm("确定要终止当前游戏并重新开始吗？")) return;
   await fetch("/reset", { method: "POST" });
@@ -1474,12 +1501,18 @@ async function startGame() {
   document.getElementById("rules-overlay").style.display = "none";
   document.getElementById("disguise-overlay").classList.remove("show");
   document.getElementById("orient-overlay").classList.add("show");
+  // 尝试恢复音频播放（绕过浏览器自动播放限制）
+  const bgm = document.getElementById("bgm");
+  if (bgm && bgm.paused) {
+    bgm.play().catch(() => {});
+  }
 }
 
 async function dismissOrientation() {
   // 隐藏布局引导，正式启动游戏
   document.getElementById("orient-overlay").classList.remove("show");
   document.getElementById("btn-start").disabled = true;
+  document.getElementById("btn-sound").style.display = "inline-block";
   gameStarted = true;
   clearAll();
   setPhase("启动中...");

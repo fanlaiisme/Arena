@@ -34,6 +34,7 @@ _TEMPLATE_DIR = Path(__file__).parent / "templates"
 _AVATAR_DIR = Path(__file__).parent / "data" / "Public" / "avatar"
 _PLAYERS_DIR = Path(__file__).parent / "data" / "Public" / "players"
 _TUTORIAL_DIR = Path(__file__).parent / "data" / "Public" / "tutorial"
+_AUDIO_DIR = Path(__file__).parent / "audio"
 _ALIASES_PATH = Path(__file__).parent / "data" / "disguise" / "aliases.json"
 
 # 挂载静态目录
@@ -43,6 +44,8 @@ if _PLAYERS_DIR.exists():
     app.mount("/players", StaticFiles(directory=str(_PLAYERS_DIR)), name="players")
 if _TUTORIAL_DIR.exists():
     app.mount("/tutorial", StaticFiles(directory=str(_TUTORIAL_DIR)), name="tutorial")
+if _AUDIO_DIR.exists():
+    app.mount("/audio", StaticFiles(directory=str(_AUDIO_DIR)), name="audio")
 
 # 全局单例
 _viz: Visualizer | None = None

@@ -34,6 +34,13 @@
   }
   #btn-start:hover { opacity: .85; }
   #btn-start:disabled { opacity: .4; cursor: not-allowed; }
+  #btn-sound {
+    background: #334155; color: var(--text); border: 1px solid #475569;
+    padding: 8px 12px; border-radius: 8px; font-size: 16px; cursor: pointer;
+    line-height: 1; transition: background .2s;
+  }
+  #btn-sound:hover { background: #475569; }
+  #btn-sound.muted { color: #ef4444; }
   .btn-reflections {
     background: #334155; color: var(--text); border: 1px solid #475569;
     padding: 8px 18px; border-radius: 8px; font-size: 13px; cursor: pointer;
@@ -158,12 +165,16 @@
 </head>
 <body>
 
+<!-- 背景音乐 -->
+<audio id="bgm" src="/audio/Arena竞技场背景音乐.mp3" loop autoplay></audio>
+
 <!-- 顶栏 -->
 <div id="topbar">
   <h1>🏟 Arena 仪表盘</h1>
   <span class="phase-badge" id="phase-label">就绪</span>
   <span style="font-size:13px;color:var(--dim)" id="day-label"></span>
   <button id="btn-start" onclick="startGame()">▶ 开始游戏</button>
+  <button id="btn-sound" onclick="toggleSound()" title="切换背景音乐">🔊</button>
   <button class="btn-reflections" onclick="window.open('/reflections','_blank')">📊 每日复盘</button>
   <a href="/" onclick="fetch('/reset',{method:'POST'}).then(()=>location.href='/'); return false" style="font-size:12px;color:var(--dim);text-decoration:none;padding:4px 10px;border:1px solid #475569;border-radius:6px">🏠 返回首页</a>
 </div>
@@ -556,6 +567,11 @@ async function startGame() {
   document.getElementById("btn-start").disabled = true;
   clearAll();
   setPhase("启动中...");
+  // 用户点击开始游戏后，尝试恢复音频播放（绕过浏览器自动播放限制）
+  const bgm = document.getElementById("bgm");
+  if (bgm && bgm.paused) {
+    bgm.play().catch(() => {});
+  }
   try {
     const resp = await fetch("/start", { method: "POST" });
     const json = await resp.json();
@@ -570,6 +586,22 @@ async function startGame() {
     console.error("POST /start failed:", e);
     setPhase("连接失败: " + e.message);
     document.getElementById("btn-start").disabled = false;
+  }
+}
+
+function toggleSound() {
+  const bgm = document.getElementById("bgm");
+  const btn = document.getElementById("btn-sound");
+  if (!bgm) return;
+  if (bgm.paused || bgm.muted) {
+    bgm.muted = false;
+    bgm.play().catch(() => {});
+    btn.textContent = "🔊";
+    btn.classList.remove("muted");
+  } else {
+    bgm.muted = true;
+    btn.textContent = "🔇";
+    btn.classList.add("muted");
   }
 }
 </script>
