@@ -317,7 +317,7 @@ function handle(type, d) {
 
     case "deployment":
       appendChat(d.player === playerAName ? "a" : "b",
-        `📋 部署第${d.slots}局: ${d.char_id}`, "speak");
+        `📋 部署第${d.slots}局: ${d.char_name || d.char_id}`, "speak");
       break;
 
     case "match_start":

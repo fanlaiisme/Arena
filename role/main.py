@@ -588,9 +588,15 @@ def run_deployment_phase(gambler_agent, gambler: Gambler, opponent: Gambler,
     print(f"  {gambler.player_name} 部署: {deploy_result}")
     logger.log_agent_message(gambler.player_name, "deployment_final", str(gambler.deployments))
     if viz:
+        # 构建 char_id → name 查找表
+        _name_lookup = {}
+        if gambler.squad:
+            for m in gambler.squad.members:
+                _name_lookup[m.char_id] = m.name
         for slot, char_id in deploy_result.items():
             viz.emit("deployment", {"player": gambler.player_name, "day": day,
-                     "slot": slot, "slots": str(slot), "char_id": char_id})
+                     "slot": slot, "slots": str(slot),
+                     "char_id": char_id, "char_name": _name_lookup.get(char_id, char_id)})
     if deploy_result:
         logger.log_deployment(day, gambler.player_name, deploy_result)
 
@@ -1636,7 +1642,7 @@ def run_experiment(visualizer=None):
     logger.close()
 
 
-def run_human_vs_ai_experiment(visualizer=None, human_sync=None):
+def run_human_vs_ai_experiment(visualizer=None, human_sync=None, disguise_mapping=None):
     """运行人机对战实验 —— 人类 vs 一个 AI 智能体。
 
     流程与 run_experiment() 完全一致（3天×3局 + 拍卖 + 疲劳），
@@ -1645,9 +1651,28 @@ def run_human_vs_ai_experiment(visualizer=None, human_sync=None):
     Args:
         visualizer: Visualizer 实例
         human_sync: HumanInputState 实例，用于线程同步
+        disguise_mapping: 替身映射 {real_char_id: {"id": dis_id, "name": dis_name}}
     """
     viz = visualizer
     sync = human_sync
+    # 替身模式：在 Visualizer 层面替换所有 SSE 事件中的角色名称和 ID
+    if disguise_mapping and viz:
+        viz.set_disguise_mapping(disguise_mapping)
+    # 构建逆向映射：前端提交的是替身 ID，需要转回真实 char_id
+    _disguise_id_to_real = {v["id"]: k for k, v in (disguise_mapping or {}).items()}
+
+    def _real_char_id(disguise_id: str) -> str:
+        """替身 ID → 真实 char_id，非替身模式原样返回。"""
+        return _disguise_id_to_real.get(disguise_id, disguise_id)
+
+    def _squad_name(player, char_id: str) -> str:
+        """从玩家阵容中查找 char_id 对应的名称。"""
+        if player.squad:
+            for m in player.squad.members:
+                if m.char_id == char_id:
+                    return m.name
+        return char_id
+
     human = Gambler(player_name="人类玩家", assets=100)
     ai = Gambler(player_name="智能体", assets=100)
 
@@ -2195,11 +2220,12 @@ def run_human_vs_ai_experiment(visualizer=None, human_sync=None):
             sync.deploy_event.clear()
             viz.clear_pending_wait()
             for s, cid in sync.human_deployments.items():
-                human.deployments[s] = cid
+                human.deployments[s] = _real_char_id(cid)
             if viz:
                 for s, cid in sync.human_deployments.items():
                     viz.emit("deployment", {"player": human.player_name, "day": day,
-                             "slot": s, "slots": str(s), "char_id": cid})
+                             "slot": s, "slots": str(s),
+                             "char_id": cid, "char_name": _squad_name(human, _real_char_id(cid))})
         logger.log_deployment(day, human.player_name, {1: human.deployments.get(1, "?")})
         logger.log_deployment(day, ai.player_name, {1: ai.deployments.get(1, "?")})
 
@@ -2210,7 +2236,9 @@ def run_human_vs_ai_experiment(visualizer=None, human_sync=None):
         logger.log_phase("reflect_match1", "start", day)
         if viz and sync:
             viz.emit("deployment", {"player": ai.player_name, "day": day,
-                     "slot": 1, "slots": "1", "char_id": ai.deployments.get(1, "?")})
+                     "slot": 1, "slots": "1",
+                     "char_id": ai.deployments.get(1, "?"),
+                     "char_name": _squad_name(ai, ai.deployments.get(1, ""))})
             sync.waiting_for = "confirm"
             viz.emit("awaiting_confirm", {
                 "label": "第1局赛后",
@@ -2279,7 +2307,7 @@ def run_human_vs_ai_experiment(visualizer=None, human_sync=None):
             sync.deploy_event.clear()
             viz.clear_pending_wait()
             for s, cid in sync.human_deployments.items():
-                human.deployments[s] = cid
+                human.deployments[s] = _real_char_id(cid)
             # 验证：不能选已在第1局出战过的角斗士
             already_used = human.deployments.get(1)
             vals23 = list(sync.human_deployments.values())
@@ -2299,11 +2327,12 @@ def run_human_vs_ai_experiment(visualizer=None, human_sync=None):
                     sync.deploy_event.clear()
                     viz.clear_pending_wait()
                     for s, cid in sync.human_deployments.items():
-                        human.deployments[s] = cid
+                        human.deployments[s] = _real_char_id(cid)
             if viz:
                 for s, cid in sync.human_deployments.items():
                     viz.emit("deployment", {"player": human.player_name, "day": day,
-                             "slot": s, "slots": str(s), "char_id": cid})
+                             "slot": s, "slots": str(s),
+                             "char_id": cid, "char_name": _squad_name(human, _real_char_id(cid))})
 
         # 运行 Match 2+3
         run_match_phase(human, ai, logger, day, slots=[2, 3])
@@ -2315,7 +2344,9 @@ def run_human_vs_ai_experiment(visualizer=None, human_sync=None):
             for s in [2, 3]:
                 if s in ai.deployments:
                     viz.emit("deployment", {"player": ai.player_name, "day": day,
-                             "slot": s, "slots": str(s), "char_id": ai.deployments[s]})
+                             "slot": s, "slots": str(s),
+                             "char_id": ai.deployments[s],
+                             "char_name": _squad_name(ai, ai.deployments[s])})
             sync.waiting_for = "confirm"
             viz.emit("awaiting_confirm", {
                 "label": "比赛结果",

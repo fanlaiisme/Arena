@@ -385,6 +385,47 @@
     0%, 100% { box-shadow: 0 0 6px rgba(255,255,255,0.1); }
     50% { box-shadow: 0 0 16px rgba(255,255,255,0.25); }
   }
+
+  /* 替身模式选择覆盖层 */
+  #disguise-overlay {
+    display: none;
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 250;
+    background: rgba(15, 23, 42, 0.92);
+    align-items: center; justify-content: center;
+  }
+  #disguise-overlay.show { display: flex; }
+  .disguise-card {
+    background: var(--panel); border: 1px solid var(--cl-gold); border-radius: 16px;
+    padding: 40px 52px; text-align: center; max-width: 560px;
+  }
+  .disguise-card h2 { font-size: 22px; margin-bottom: 10px; }
+  .disguise-card .sub { font-size: 14px; color: var(--dim); margin-bottom: 24px; }
+  .disguise-card .tip-box {
+    background: #1a1a2e; border: 1px solid #a78bfa; border-radius: 10px;
+    padding: 18px; margin: 18px 0; font-size: 13px; text-align: left; line-height: 1.8;
+  }
+  .disguise-back {
+    display: inline-block; color: var(--dim); font-size: 13px; cursor: pointer;
+    text-decoration: underline; margin-top: 16px;
+  }
+  .disguise-back:hover { color: var(--text); }
+  .disguise-card .btn-row {
+    display: flex; gap: 12px; justify-content: center; margin-top: 20px;
+  }
+  .disguise-card button {
+    padding: 12px 24px; font-size: 15px; border: none; border-radius: 10px;
+    cursor: pointer; font-weight: 700;
+  }
+  .btn-disguise {
+    background: var(--cl-purple); color: #fff;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .btn-disguise .small { font-size: 11px; font-weight: 400; opacity: 0.8; }
+  .btn-original {
+    background: #334155; color: #e2e8f0; border: 1px solid #475569 !important;
+  }
+  .btn-disguise:hover { opacity: .85; }
+  .btn-original:hover { background: #475569; }
 </style>
 </head>
 <body>
@@ -414,6 +455,31 @@
       <button id="btn-skip" onclick="skipTutorial()">跳过教程，直接开始</button>
       <button id="btn-next" onclick="nextTutorialStep()">继续 →</button>
     </div>
+  </div>
+</div>
+
+<!-- 替身模式选择覆盖层 -->
+<div id="disguise-overlay">
+  <div class="disguise-card">
+    <h2>🎭 角色替身模式</h2>
+    <p class="sub">如果你已经熟悉这 20 位角斗士的胜率，试试换一批新面孔</p>
+    <div class="tip-box">
+      <b>替身模式是什么？</b><br>
+      • 20 名角斗士的名称和图片全部替换为新角色<br>
+      • 每次重新开始游戏，角色对应关系<b>随机洗牌</b><br>
+      • 角斗士的真实实力（胜率数据）不变，只是换了"马甲"<br>
+      • 上一局的记忆不再适用，你需要重新探索和推理
+    </div>
+    <div class="btn-row">
+      <button class="btn-disguise" onclick="_useDisguise=true;startGame()">
+        🎭 使用替身模式
+        <span class="small">随机替换全部 20 名角色</span>
+      </button>
+      <button class="btn-original" onclick="_useDisguise=false;startGame()">
+        使用原始角色
+      </button>
+    </div>
+    <span class="disguise-back" onclick="backToTutorial()">← 返回规则介绍</span>
   </div>
 </div>
 
@@ -633,9 +699,9 @@ function handle(type, d) {
 
     case "deployment":
       if (d.player === humanName) {
-        appendChatHuman("📋", `部署第${d.slots}局: ${d.char_id}`);
+        appendChatHuman("📋", `部署第${d.slots}局: ${d.char_name || d.char_id}`);
       } else {
-        appendChatAI("📋", `部署第${d.slots}局: ${d.char_id}`);
+        appendChatAI("📋", `部署第${d.slots}局: ${d.char_name || d.char_id}`);
       }
       break;
 
@@ -1319,6 +1385,7 @@ const TUTORIAL_STEPS = [
   }
 ];
 
+let _useDisguise = false;
 let tutorialStep = 0;
 
 function renderTutorialStep(n) {
@@ -1350,7 +1417,7 @@ function renderTutorialStep(n) {
 
 function nextTutorialStep() {
   if (tutorialStep >= 5) {
-    startGame();
+    showDisguiseChoice();
     return;
   }
   tutorialStep++;
@@ -1365,8 +1432,8 @@ function prevTutorialStep() {
 }
 
 function skipTutorial() {
-  if (confirm("确定要跳过教程，直接开始游戏吗？\n\n建议第一次玩的玩家完成教程，了解拍卖暗标的核心机制。")) {
-    startGame();
+  if (confirm("确定要跳过教程吗？\n\n建议第一次玩的玩家完成教程，了解拍卖暗标的核心机制。")) {
+    showDisguiseChoice();
   }
 }
 
@@ -1388,9 +1455,24 @@ async function resetGame(toHome) {
 // 页面加载时渲染教程第一步
 renderTutorialStep(0);
 
-async function startGame() {
-  // 隐藏教程遮罩，显示布局引导
+function backToTutorial() {
+  // 隐藏替身选择，回到教程最后一步
+  document.getElementById("disguise-overlay").classList.remove("show");
+  document.getElementById("rules-overlay").style.display = "flex";
+  tutorialStep = 5;
+  renderTutorialStep(5);
+}
+
+function showDisguiseChoice() {
+  // 隐藏教程遮罩，显示替身模式选择
   document.getElementById("rules-overlay").style.display = "none";
+  document.getElementById("disguise-overlay").classList.add("show");
+}
+
+async function startGame() {
+  // 隐藏所有覆盖层，显示布局引导
+  document.getElementById("rules-overlay").style.display = "none";
+  document.getElementById("disguise-overlay").classList.remove("show");
   document.getElementById("orient-overlay").classList.add("show");
 }
 
@@ -1404,7 +1486,7 @@ async function dismissOrientation() {
   updateHumanStatus(800, 0, 0, 0);
   updateAIStatus(0);
   try {
-    const resp = await fetch("/start?mode=play", { method: "POST" });
+    const resp = await fetch("/start?mode=play&disguise=" + (_useDisguise ? "1" : "0"), { method: "POST" });
     const json = await resp.json();
     console.log("/start response:", json);
     if (json.status !== "ok") {

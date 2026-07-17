@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 import time
 
 
@@ -31,9 +32,65 @@ class Visualizer:
         # 人机对战 catch-up：记录当前等待事件，页面刷新时重发
         self._pending_wait_event: str | None = None
         self._pending_wait_data: dict | None = None
+        # 替身模式：真实 char_id/name → 替身 id/name 的映射
+        self._disguise_mapping: dict | None = None
+        self._disguise_reverse_names: dict | None = None  # {real_name: disguise_name}
+        self._disguise_reverse_ids: dict | None = None    # {real_id: disguise_id}
 
     def mark_game_over(self):
         self._game_over = True
+
+    def set_disguise_mapping(self, mapping: dict):
+        """设置替身映射。
+
+        Args:
+            mapping: {real_char_id: {"id": disguise_id, "name": disguise_name}, ...}
+        """
+        self._disguise_mapping = mapping
+        # 构建逆向查找表
+        from characters import CHARACTERS
+        self._disguise_reverse_names = {}
+        self._disguise_reverse_ids = {}
+        for c in CHARACTERS:
+            if c.id in mapping:
+                self._disguise_reverse_ids[c.id] = mapping[c.id]["id"]
+                self._disguise_reverse_names[c.name] = mapping[c.id]["name"]
+
+    def _apply_disguise(self, data: dict) -> dict:
+        """递归替换 data 中所有匹配的真实 char_id/name 为替身值。"""
+        if not self._disguise_mapping:
+            return data
+
+        result = {}
+        for key, value in data.items():
+            if isinstance(value, str):
+                # 精确匹配 char_id
+                if value in self._disguise_reverse_ids:
+                    result[key] = self._disguise_reverse_ids[value]
+                # 精确匹配 name
+                elif value in self._disguise_reverse_names:
+                    result[key] = self._disguise_reverse_names[value]
+                else:
+                    # 对文本内容（如 agent_message.content）做子串替换
+                    v = value
+                    for real_name, dis_name in self._disguise_reverse_names.items():
+                        v = v.replace(real_name, dis_name)
+                    for real_id, dis_id in self._disguise_reverse_ids.items():
+                        v = v.replace(real_id, dis_id)
+                    result[key] = v
+            elif isinstance(value, dict):
+                result[key] = self._apply_disguise(value)
+            elif isinstance(value, list):
+                result[key] = [
+                    self._apply_disguise(item) if isinstance(item, dict) else
+                    self._disguise_reverse_ids.get(item,
+                        self._disguise_reverse_names.get(item, item))
+                    if isinstance(item, str) else item
+                    for item in value
+                ]
+            else:
+                result[key] = value
+        return result
 
     def set_ranking_truth(self, data: list[dict]):
         """设置完整胜率排名 ground truth。"""
@@ -55,6 +112,9 @@ class Visualizer:
         可从任意线程调用（如后台游戏线程）。
         """
         d = data or {}
+        # 替身模式：替换所有 SSE 事件中的真实名称和 ID
+        if self._disguise_mapping:
+            d = self._apply_disguise(d)
         # 缓存 game_start 信息，用于新 SSE 连接重发
         if event_type == "game_start":
             self._player_a_name = d.get("player_a")
