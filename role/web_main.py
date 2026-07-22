@@ -28,7 +28,7 @@ from role.visualizer import Visualizer
 from role.main import run_experiment as _run_experiment
 from role.human_sync import HumanInputState
 
-app = FastAPI(title="Arena 可视化仪表盘")
+app = FastAPI(title="Arena 可视化仪表盘", docs_url=None, redoc_url=None, openapi_url=None)
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
 _AVATAR_DIR = Path(__file__).parent / "data" / "Public" / "avatar"
